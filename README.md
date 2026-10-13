@@ -5,7 +5,7 @@ Aplicación Android nativa en Kotlin + Jetpack Compose/Material 3. El inventario
 ## Funciones implementadas
 - Alta y lista de productos, unidad, existencia, mínimo/máximo; alertas visuales normal / cerca / bajo / agotado.
 - Recepción con proveedor opcional, fecha/hora del registro y lote PEPS.
-- Entregas con cliente/destinatario y repartidor opcional; prevalidación del stock, descuento FIFO con lote más antiguo primero y registro de lotes asignados, todo en transacción Room.
+- Entregas directas a repartidores (repartidor opcional); el formulario no solicita cliente/destinatario. Prevalidación del stock, descuento FIFO con lote más antiguo primero y registro de lotes asignados, todo en transacción Room.
 - Historial reciente de entregas y devoluciones parciales; la devolución se limita a la cantidad original y repone el lote de origen conservando auditoría.
 - Contactos de tipo proveedor/cliente/ambos y catálogo de repartidores.
 - Calendario semanal de trailers con indicador de días únicos programados.

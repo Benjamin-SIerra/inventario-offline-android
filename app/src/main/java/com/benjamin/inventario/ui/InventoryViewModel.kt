@@ -29,7 +29,7 @@ class InventoryViewModel(private val repo:InventoryRepository):ViewModel(){
  fun trailer(d:Int,on:Boolean)=launchOp{repo.scheduleTrailer(d,on)}
  fun receive(id:Long,q:Long,c:ContactoEntity?)=launchOp{repo.receive(id,q,c)}
  fun returnUnits(lineId:Long,q:Long)=launchOp{repo.returnUnits(lineId,q);_message.emit("Devolución registrada y asignada al lote de origen")}
- fun issue(id:Long,q:Long,c:ContactoEntity?,n:String,d:RepartidorEntity?)=launchOp{val used=repo.issue(id,q,c,n,d);_message.emit("Salida registrada · FIFO ${used.joinToString{ "lote ${it.first}: ${it.second}" }}")}
+ fun issue(id:Long,q:Long,d:RepartidorEntity?)=launchOp{val used=repo.issue(id,q,d);_message.emit("Entrega registrada · FIFO ${used.joinToString{ "lote ${it.first}: ${it.second}" }}")}
  private fun launchOp(block:suspend()->Unit){viewModelScope.launch{runCatching{block()}.onFailure{_message.emit(it.message?:"No se pudo guardar")}}}
  companion object{fun factory(repo:InventoryRepository)=object:ViewModelProvider.Factory{@Suppress("UNCHECKED_CAST") override fun<T:ViewModel>create(modelClass:Class<T>):T=InventoryViewModel(repo) as T}}
 }

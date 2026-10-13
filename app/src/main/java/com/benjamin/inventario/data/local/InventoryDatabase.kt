@@ -31,7 +31,7 @@ import kotlinx.coroutines.flow.Flow
  @Query("SELECT COALESCE(SUM(cantidad),0) FROM devoluciones WHERE salidaLineaId=:line AND loteId=:lot") suspend fun totalDevuelto(line:Long,lot:Long):Long
  @Query("SELECT loteId,cantidad,0 AS recibidoEnEpochMillis FROM salida_lotes WHERE salidaLineaId=:line ORDER BY id") suspend fun lotesSalida(line:Long):List<LoteEntregado>
  @Query("SELECT * FROM salida_lineas WHERE id=:id") suspend fun lineaSalida(id:Long):SalidaLineaEntity?
- @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,salida_lineas.cantidad,salidas.destinatarioNombre,salidas.repartidorNombre,salida_lineas.fechaEpochMillis FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30") fun salidasRecientes():Flow<List<SalidaReciente>>
+ @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,salida_lineas.cantidad,salidas.repartidorNombre,salida_lineas.fechaEpochMillis FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30") fun salidasRecientes():Flow<List<SalidaReciente>>
  @Query("SELECT COALESCE(SUM(cantidad),0) FROM salida_lineas WHERE productoId=:pid AND fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") suspend fun demanda(pid:Long,desde:Long,hasta:Long):Long
  @Query("SELECT COUNT(*) FROM entradas WHERE fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") fun entradasHoy(desde:Long,hasta:Long):Flow<Int>
  @Query("SELECT COUNT(*) FROM salidas WHERE fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") fun salidasHoy(desde:Long,hasta:Long):Flow<Int>
