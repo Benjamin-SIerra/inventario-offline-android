@@ -22,6 +22,19 @@ data class SalidaLoteEntity(@PrimaryKey(autoGenerate = true) val id: Long = 0, v
 data class DevolucionEntity(@PrimaryKey(autoGenerate = true) val id: Long=0,val salidaId:Long,val salidaLineaId:Long,val loteId:Long,val cantidad:Long,val fechaEpochMillis:Long,val nota:String="")
 @Entity(tableName = "trailers", indices = [Index("diaSemana", "activo")])
 data class TrailerProgramadoEntity(@PrimaryKey(autoGenerate = true) val id: Long = 0, val diaSemana: Int, val nota: String = "", val activo: Boolean = true)
+@Entity(tableName = "jornadas_rutas")
+data class JornadaRutasEntity(@PrimaryKey val fecha: String, val cantidadRutas: Int)
+@Entity(
+    tableName = "rutas_diarias",
+    foreignKeys = [ForeignKey(entity = JornadaRutasEntity::class, parentColumns = ["fecha"], childColumns = ["fecha"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("fecha"), Index(value = ["fecha", "numeroRuta"], unique = true)]
+)
+data class RutaDiariaEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fecha: String,
+    val numeroRuta: Int,
+    val completada: Boolean = false
+)
 data class LoteFIFO(val id: Long, val entradaId: Long, val recibidoEnEpochMillis: Long, val cantidadDisponible: Long)
 data class ProductoMovido(val productoId: Long, val productoNombre: String, val unidades: Long)
 data class SalidaReciente(val lineaId:Long,val salidaId:Long,val productoId:Long,val productoNombre:String,val cantidad:Long,val repartidorNombre:String?,val fechaEpochMillis:Long)

@@ -8,12 +8,14 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.room.Room
 import com.benjamin.inventario.data.local.InventoryDatabase
+import com.benjamin.inventario.data.local.MIGRATION_1_2
 import com.benjamin.inventario.ui.InventoryApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val db = Room.databaseBuilder(applicationContext, InventoryDatabase::class.java, "inventario-local.db")
+            .addMigrations(MIGRATION_1_2)
             .build()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(

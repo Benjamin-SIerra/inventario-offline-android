@@ -2,6 +2,7 @@ package com.benjamin.inventario.data
 
 import androidx.room.withTransaction
 import com.benjamin.inventario.data.local.*
+import com.benjamin.inventario.domain.generarNumerosDeRuta
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,18 @@ class InventoryRepository(private val db: InventoryDatabase) {
     }}
     fun movements(period:Period)=period.range().let{dao.unidadesMovidas(it.first,it.second)}
     fun ranking(period:Period)=period.range().let{dao.ranking(it.first,it.second)}
+    fun routeDay(date:String)=dao.jornadaRutas(date)
+    fun routesForDay(date:String,count:Int)=dao.rutasDiarias(date,count)
+    suspend fun configureRouteDay(date:String,count:Int)=db.withTransaction{
+        LocalDate.parse(date)
+        val numbers=generarNumerosDeRuta(count)
+        dao.guardarJornadaRutas(JornadaRutasEntity(fecha=date,cantidadRutas=count))
+        dao.insertarRutasDiarias(numbers.map{RutaDiariaEntity(fecha=date,numeroRuta=it)})
+    }
+    suspend fun setRouteCompleted(date:String,number:Int,completed:Boolean){
+        require(number in 1..1000)
+        check(dao.marcarRuta(date,number,completed)==1){"La ruta ya no existe en esta jornada"}
+    }
     suspend fun saveProduct(name:String,unit:String,min:Long,max:Long){require(name.isNotBlank()&&min>=0&&max>=min);dao.crearProducto(ProductoEntity(nombre=name.trim(),unidad=unit.trim().ifBlank{"unidad"},minimo=min,maximo=max))}
     suspend fun addContact(name:String,role:String){require(name.isNotBlank());dao.crearContacto(ContactoEntity(nombre=name.trim(),rol=role))}
     suspend fun addDriver(name:String){require(name.isNotBlank());dao.crearRepartidor(RepartidorEntity(nombre=name.trim()))}

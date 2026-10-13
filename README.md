@@ -9,11 +9,12 @@ Aplicación Android nativa en Kotlin + Jetpack Compose/Material 3. El inventario
 - Historial reciente de entregas y devoluciones parciales; la devolución se limita a la cantidad original y repone el lote de origen conservando auditoría.
 - Contactos de tipo proveedor/cliente/ambos y catálogo de repartidores.
 - Calendario semanal de trailers con indicador de días únicos programados.
+- Control diario de rutas de surtido: genera rutas numeradas por fecha, permite marcar cada una como surtida y conserva el progreso localmente.
 - Dashboard con movimientos de hoy, alertas, comparativa semanal/mensual y gráficas de barras hechas con Compose.
 - Recomendación de pedido basada en salidas de 30 días y estimación de plazo de 7 días; la UI explica que es una estimación.
 
 ## Arquitectura
-`Compose → InventoryViewModel (StateFlow) → InventoryRepository → InventoryDao → Room`. El flujo de recepción, salida y devolución se ejecuta en `RoomDatabase.withTransaction`; decrementos de lotes son SQL con guardas de saldo. Los movimientos contabilizados se conservan con claves foráneas `RESTRICT`.
+`Compose → InventoryViewModel (StateFlow) → InventoryRepository → InventoryDao → Room`. El flujo de recepción, salida y devolución se ejecuta en `RoomDatabase.withTransaction`; decrementos de lotes son SQL con guardas de saldo. Los movimientos contabilizados se conservan con claves foráneas `RESTRICT`. La versión 2 añade jornadas y checklist de rutas mediante migración Room 1→2 sin borrar los datos existentes.
 
 ## Compilar
 Requiere JDK 17 y Android SDK 35. Desde la carpeta del proyecto:
