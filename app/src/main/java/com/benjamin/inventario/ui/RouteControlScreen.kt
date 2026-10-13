@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.benjamin.inventario.data.local.JornadaRutasEntity
 import com.benjamin.inventario.data.local.RutaDiariaEntity
 import com.benjamin.inventario.domain.MAX_RUTAS_POR_JORNADA
+import com.benjamin.inventario.domain.isWholeNumberInput
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -105,7 +106,7 @@ fun RouteControlScreen(
                     Text("Rutas para surtir", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = countInput,
-                        onValueChange = { countInput = it.filter(Char::isDigit).take(4) },
+                        onValueChange = { input -> if (isWholeNumberInput(input) && input.length <= 4) countInput = input },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Cantidad de rutas") },
                         placeholder = { Text("Ej. 20") },
