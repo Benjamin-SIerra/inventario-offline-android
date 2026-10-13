@@ -33,7 +33,20 @@ import kotlinx.coroutines.flow.Flow
  @Query("SELECT COALESCE(SUM(cantidad),0) FROM devoluciones WHERE salidaLineaId=:line AND loteId=:lot") suspend fun totalDevuelto(line:Long,lot:Long):Long
  @Query("SELECT loteId,cantidad,0 AS recibidoEnEpochMillis FROM salida_lotes WHERE salidaLineaId=:line ORDER BY id") suspend fun lotesSalida(line:Long):List<LoteEntregado>
  @Query("SELECT * FROM salida_lineas WHERE id=:id") suspend fun lineaSalida(id:Long):SalidaLineaEntity?
- @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,salida_lineas.cantidad,salidas.repartidorNombre,salida_lineas.fechaEpochMillis FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30") fun salidasRecientes():Flow<List<SalidaReciente>>
+ @Query("SELECT COALESCE(SUM(cantidad),0) FROM devoluciones WHERE salidaLineaId=:line") suspend fun totalDevueltoLinea(line:Long):Long
+ @Query("SELECT COUNT(*) FROM salida_lotes WHERE loteId=:lot") suspend fun referenciasSalidaLote(lot:Long):Int
+ @Query("SELECT * FROM lotes WHERE id=:id") suspend fun lote(id:Long):LoteEntity?
+ @Query("SELECT COUNT(*) FROM lotes WHERE entradaId=:entrada") suspend fun lotesDeEntrada(entrada:Long):Int
+ @Query("UPDATE lotes SET productoId=:producto,cantidadInicial=:inicial,cantidadDisponible=:disponible WHERE id=:id") suspend fun actualizarLote(id:Long,producto:Long,inicial:Long,disponible:Long):Int
+ @Query("DELETE FROM lotes WHERE id=:id") suspend fun eliminarLote(id:Long):Int
+ @Query("DELETE FROM entradas WHERE id=:id") suspend fun eliminarEntrada(id:Long):Int
+ @Query("DELETE FROM salida_lotes WHERE salidaLineaId=:line") suspend fun eliminarAsignacionesLinea(line:Long):Int
+ @Query("UPDATE salida_lineas SET productoId=:producto,productoNombre=:nombre,cantidad=:cantidad WHERE id=:line") suspend fun actualizarLineaSalida(line:Long,producto:Long,nombre:String,cantidad:Long):Int
+ @Query("DELETE FROM salida_lineas WHERE id=:line") suspend fun eliminarLineaSalida(line:Long):Int
+ @Query("SELECT COUNT(*) FROM salida_lineas WHERE salidaId=:salida") suspend fun lineasDeSalida(salida:Long):Int
+ @Query("DELETE FROM salidas WHERE id=:id") suspend fun eliminarSalida(id:Long):Int
+ @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,salida_lineas.cantidad,salidas.repartidorNombre,salida_lineas.fechaEpochMillis,COALESCE(SUM(devoluciones.cantidad),0) AS devuelto FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId LEFT JOIN devoluciones ON devoluciones.salidaLineaId=salida_lineas.id GROUP BY salida_lineas.id ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30") fun salidasRecientes():Flow<List<SalidaReciente>>
+ @Query("SELECT entradas.id AS entradaId,lotes.id AS loteId,lotes.productoId AS productoId,productos.nombre AS productoNombre,lotes.cantidadInicial AS cantidad,lotes.cantidadDisponible AS cantidadDisponible,entradas.proveedorNombre AS proveedorNombre,entradas.fechaEpochMillis AS fechaEpochMillis,COUNT(salida_lotes.id) AS referenciasSalida FROM entradas JOIN lotes ON lotes.entradaId=entradas.id JOIN productos ON productos.id=lotes.productoId LEFT JOIN salida_lotes ON salida_lotes.loteId=lotes.id GROUP BY lotes.id ORDER BY entradas.fechaEpochMillis DESC,lotes.id DESC LIMIT 30") fun entradasRecientes():Flow<List<EntradaReciente>>
  @Query("SELECT COALESCE(SUM(cantidad),0) FROM salida_lineas WHERE productoId=:pid AND fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") suspend fun demanda(pid:Long,desde:Long,hasta:Long):Long
  @Query("SELECT COUNT(*) FROM entradas WHERE fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") fun entradasHoy(desde:Long,hasta:Long):Flow<Int>
  @Query("SELECT COUNT(*) FROM salidas WHERE fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta") fun salidasHoy(desde:Long,hasta:Long):Flow<Int>

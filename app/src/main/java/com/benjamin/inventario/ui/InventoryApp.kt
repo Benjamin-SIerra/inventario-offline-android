@@ -23,13 +23,16 @@ import java.time.DayOfWeek
 
 private val Gold=Color(0xFFC8A84C); private val Green=Color(0xFF4CAF7D); private val Amber=Color(0xFFE6AE49); private val Red=Color(0xFFE05B62)
 
+private data class DeleteMovement(val receipt:Boolean,val id:Long)
+
 @Composable fun InventoryApp(db:InventoryDatabase){
     val vm:InventoryViewModel=viewModel(factory=InventoryViewModel.factory(InventoryRepository(db)))
     val products by vm.products.collectAsState(); val contacts by vm.contacts.collectAsState(); val drivers by vm.drivers.collectAsState()
     val routeDay by vm.routeDay.collectAsState(); val dailyRoutes by vm.dailyRoutes.collectAsState()
     val low by vm.low.collectAsState(); val empty by vm.empty.collectAsState(); val trailerDays by vm.trailerDays.collectAsState(); val trailers by vm.trailers.collectAsState()
-    val receipts by vm.receipts.collectAsState(); val issues by vm.issues.collectAsState(); val recentIssues by vm.recentIssues.collectAsState(); val moved by vm.moved.collectAsState(); val rank by vm.ranking.collectAsState(); val period by vm.selectedPeriod.collectAsState(); val suggestions by vm.suggestions.collectAsState()
+    val receipts by vm.receipts.collectAsState(); val issues by vm.issues.collectAsState(); val recentIssues by vm.recentIssues.collectAsState(); val recentReceipts by vm.recentReceipts.collectAsState(); val moved by vm.moved.collectAsState(); val rank by vm.ranking.collectAsState(); val period by vm.selectedPeriod.collectAsState(); val suggestions by vm.suggestions.collectAsState()
     var tab by remember { mutableIntStateOf(0) }; var showRouteControl by remember { mutableStateOf(false) }; var dialog by remember { mutableStateOf("") }; var toast by remember { mutableStateOf("") }; var returnLine by remember { mutableStateOf<SalidaReciente?>(null) }; var returnQty by remember { mutableStateOf("") }
+    var editingReceipt by remember { mutableStateOf<EntradaReciente?>(null) }; var editingIssue by remember { mutableStateOf<SalidaReciente?>(null) }; var deleteTarget by remember { mutableStateOf<DeleteMovement?>(null) }
     LaunchedEffect(Unit){vm.message.collect{toast=it}}
     Scaffold(bottomBar={ NavigationBar { listOf("Inicio","Productos","Movimientos","Más").forEachIndexed{i,s->NavigationBarItem(selected=tab==i,onClick={tab=i;showRouteControl=false},icon={Text(listOf("⌂","▤","⇄","•••")[i])},label={Text(s)}) } } }, floatingActionButton={ if(tab==0||tab==2) FloatingActionButton(onClick={tab=2},containerColor=Gold,contentColor=Color.Black){Text("+",fontSize=28.sp)} }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).background(Color(0xFF101113))) {
@@ -37,12 +40,33 @@ private val Gold=Color(0xFFC8A84C); private val Green=Color(0xFF4CAF7D); private
             when(tab){
                 0->Dashboard(products.size,low,empty,trailerDays,receipts,issues,moved,rank,period,vm,suggestions)
                 1->ProductScreen(products,onAdd={dialog="producto"})
-                2->MovementsScreen(products,contacts,drivers,recentIssues,onReceive={dialog="entrada"},onIssue={dialog="salida"},onReturn={returnLine=it;returnQty=""})
+                2->MovementsScreen(products,contacts,drivers,recentReceipts,recentIssues,onReceive={dialog="entrada"},onIssue={dialog="salida"},onReturn={returnLine=it;returnQty=""},onEditReceipt={editingReceipt=it},onDeleteReceipt={deleteTarget=DeleteMovement(receipt=true,id=it.loteId)},onEditIssue={editingIssue=it},onDeleteIssue={deleteTarget=DeleteMovement(receipt=false,id=it.lineaId)})
                 else->if(showRouteControl) RouteControlScreen(date=vm.routeDate,day=routeDay,routes=dailyRoutes,onBack={showRouteControl=false},onConfigure=vm::configureRoutes,onToggle=vm::setRouteCompleted) else MoreScreen(contacts,drivers,onContact={dialog="contacto"},onDriver={dialog="repartidor"},onTrailers={dialog="trailers"},onRoutes={showRouteControl=true})
             }
         }
         if(dialog.isNotEmpty()) EntryDialog(dialog,products,contacts,drivers,trailers,onClose={dialog=""},onSaveProduct={n,u,m,x->vm.saveProduct(n,u,m,x);dialog=""},onReceive={id,q,c->vm.receive(id,q,c);dialog=""},onIssue={id,q,d->vm.issue(id,q,d);dialog=""},onContact={n,r->vm.addContact(n,r);dialog=""},onDriver={n->vm.addDriver(n);dialog=""},onTrailer={d,on->vm.trailer(d,on)})
-        if(returnLine!=null) AlertDialog(onDismissRequest={returnLine=null},title={Text("Registrar devolución")},text={Column{Text("${returnLine!!.productoNombre} · Repartidor: ${returnLine!!.repartidorNombre?:"—"}");Text("Entregado: ${returnLine!!.cantidad} u");Field("Cantidad que regresa",returnQty,{returnQty=it},true)}},confirmButton={TextButton(onClick={vm.returnUnits(returnLine!!.lineaId,returnQty.toLongOrNull()?:0);returnLine=null}){Text("Guardar devolución")}},dismissButton={TextButton(onClick={returnLine=null}){Text("Cancelar")}})
+        if(returnLine!=null) AlertDialog(
+            onDismissRequest={returnLine=null},title={Text("Registrar devolución")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(6.dp)){
+                Text("${returnLine!!.productoNombre} · Repartidor: ${returnLine!!.repartidorNombre?:"—"}")
+                Text("Entregado: ${returnLine!!.cantidad} u · Ya devuelto: ${returnLine!!.devuelto} u")
+                Text("Pendiente: ${returnLine!!.pendiente} u",color=Gold,fontWeight=FontWeight.Bold)
+                Field("Cantidad que regresa",returnQty,{returnQty=it},true)
+            }},
+            confirmButton={TextButton(enabled=(returnQty.toLongOrNull()?:0L) in 1L..returnLine!!.pendiente,onClick={vm.returnUnits(returnLine!!.lineaId,returnQty.toLongOrNull()!!);returnLine=null}){Text("Guardar devolución")}},
+            dismissButton={TextButton(onClick={returnLine=null}){Text("Cancelar")}}
+        )
+        if(editingReceipt!=null||editingIssue!=null) EditMovementDialog(
+            receipt=editingReceipt,issue=editingIssue,products=products,onClose={editingReceipt=null;editingIssue=null},
+            onSaveReceipt={id,p,q->vm.editReceipt(id,p,q);editingReceipt=null},
+            onSaveIssue={id,p,q->vm.editIssue(id,p,q);editingIssue=null}
+        )
+        if(deleteTarget!=null) AlertDialog(
+            onDismissRequest={deleteTarget=null},title={Text("Eliminar movimiento")},
+            text={Text(if(deleteTarget!!.receipt)"Se eliminará la entrada y se restará del stock el saldo de ese lote." else "Se eliminará la entrega y se devolverán al stock las unidades asignadas a sus lotes originales.")},
+            confirmButton={TextButton(onClick={val target=deleteTarget!!;if(target.receipt)vm.deleteReceipt(target.id) else vm.deleteIssue(target.id);deleteTarget=null}){Text("Eliminar",color=Red)}},
+            dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancelar")}}
+        )
         if(toast.isNotBlank()) AlertDialog(onDismissRequest={toast=""},title={Text("Inventario")},text={Text(toast)},confirmButton={TextButton(onClick={toast=""}){Text("Entendido")}})
     }
 }
@@ -76,14 +100,67 @@ private val Gold=Color(0xFFC8A84C); private val Green=Color(0xFF4CAF7D); private
     }
 }
 @Composable private fun ProductScreen(products:List<ProductoEntity>,onAdd:()->Unit){Column(Modifier.fillMaxSize().padding(horizontal=16.dp)){Row(verticalAlignment=Alignment.CenterVertically){Text("Productos",fontSize=23.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Button(onClick=onAdd,colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Color.Black)){Text("+ Agregar")}};if(products.isEmpty()) EmptyState("Tu almacén está vacío","Agrega tu primer producto para empezar.");LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){items(products,key={it.id}){p->val alert=when{p.cantidadActual==0L->"AGOTADO";p.cantidadActual<=p.minimo->"BAJO";p.cantidadActual<=p.minimo+maxOf(1L,(p.minimo+4)/5)->"CERCA DEL MÍNIMO";else->"NORMAL"};val c=when(alert){"AGOTADO"->Red;"BAJO"->Red;"CERCA DEL MÍNIMO"->Amber;else->Green};Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124)),shape=RoundedCornerShape(16.dp)){Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(p.nombre,fontSize=17.sp,fontWeight=FontWeight.SemiBold);Text("Mín. ${p.minimo} · Máx. ${p.maximo} ${p.unidad}",color=Color.LightGray,fontSize=12.sp)};Column(horizontalAlignment=Alignment.End){Text("${p.cantidadActual} ${p.unidad}",fontSize=20.sp,fontWeight=FontWeight.Bold);Text(alert,color=c,fontSize=10.sp,fontWeight=FontWeight.Bold)}}}}}}}
-@Composable private fun MovementsScreen(products:List<ProductoEntity>,contacts:List<ContactoEntity>,drivers:List<RepartidorEntity>,recent:List<SalidaReciente>,onReceive:()->Unit,onIssue:()->Unit,onReturn:(SalidaReciente)->Unit){
+@Composable private fun MovementsScreen(
+    products:List<ProductoEntity>,contacts:List<ContactoEntity>,drivers:List<RepartidorEntity>,
+    receipts:List<EntradaReciente>,recent:List<SalidaReciente>,onReceive:()->Unit,onIssue:()->Unit,
+    onReturn:(SalidaReciente)->Unit,onEditReceipt:(EntradaReciente)->Unit,onDeleteReceipt:(EntradaReciente)->Unit,
+    onEditIssue:(SalidaReciente)->Unit,onDeleteIssue:(SalidaReciente)->Unit
+){
  Column(Modifier.fillMaxSize().padding(16.dp)){
   Text("Movimientos",fontSize=24.sp,fontWeight=FontWeight.Bold);Text("Las salidas consumen primero el lote más antiguo.",color=Color.LightGray,fontSize=13.sp);Spacer(Modifier.height(16.dp))
   Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Button(onClick=onReceive,modifier=Modifier.weight(1f).height(58.dp),colors=ButtonDefaults.buttonColors(containerColor=Green)){Text("↓  Recibir")};Button(onClick=onIssue,modifier=Modifier.weight(1f).height(58.dp),colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Color.Black)){Text("↑  Entregar")}}
-  Text("${products.size} productos · ${contacts.size} contactos · ${drivers.size} repartidores",color=Color.LightGray,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp));Text("Últimas entregas · devolución trazable",fontWeight=FontWeight.Bold,fontSize=17.sp)
-  LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.weight(1f)){items(recent,key={it.lineaId}){s->Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124))){Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(s.productoNombre,fontWeight=FontWeight.SemiBold);Text("${s.cantidad} u",fontSize=12.sp,color=Color.LightGray);Text("Repartidor: ${s.repartidorNombre?:"—"}",fontSize=11.sp,color=Color.LightGray)};TextButton(onClick={onReturn(s)}){Text("Devolver",color=Gold)}}}}}
+  Text("${products.size} productos · ${contacts.size} contactos · ${drivers.size} repartidores",color=Color.LightGray,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp))
+  LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.weight(1f)){
+   item{Text("Últimas entradas",fontWeight=FontWeight.Bold,fontSize=17.sp,modifier=Modifier.padding(vertical=4.dp))}
+   if(receipts.isEmpty())item{Text("Aún no hay entradas registradas.",color=Color.LightGray,fontSize=13.sp)}
+   items(receipts,key={"entrada-${it.loteId}"}){e->Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124))){Column(Modifier.padding(12.dp)){
+    Text(e.productoNombre,fontWeight=FontWeight.SemiBold);Text("Recibidas: ${e.cantidad} u · Disponibles de este lote: ${e.cantidadDisponible} u",fontSize=12.sp,color=Color.LightGray);Text("Proveedor: ${e.proveedorNombre?:"—"}",fontSize=11.sp,color=Color.LightGray)
+    Row {TextButton(onClick={onEditReceipt(e)}){Text("Editar",color=Gold)};TextButton(enabled=e.referenciasSalida==0,onClick={onDeleteReceipt(e)}){Text("Eliminar",color=if(e.referenciasSalida==0)Red else Color.Gray)}}
+    if(e.referenciasSalida>0)Text("No se puede eliminar el lote porque está asociado a entregas.",fontSize=11.sp,color=Color.LightGray)
+   }}}
+   item{Text("Últimas entregas",fontWeight=FontWeight.Bold,fontSize=17.sp,modifier=Modifier.padding(top=10.dp,bottom=4.dp))}
+   if(recent.isEmpty())item{Text("Aún no hay entregas registradas.",color=Color.LightGray,fontSize=13.sp)}
+   items(recent,key={"salida-${it.lineaId}"}){s->Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124))){Column(Modifier.padding(12.dp)){
+    Text(s.productoNombre,fontWeight=FontWeight.SemiBold);Text("Entregado: ${s.cantidad} u · Devuelto: ${s.devuelto} u · Pendiente: ${s.pendiente} u",fontSize=12.sp,color=Color.LightGray);Text("Repartidor: ${s.repartidorNombre?:"—"}",fontSize=11.sp,color=Color.LightGray)
+    Row {TextButton(enabled=s.pendiente>0,onClick={onReturn(s)}){Text(if(s.pendiente>0)"Devolver" else "Completada",color=if(s.pendiente>0)Gold else Green)};if(s.devuelto==0L){TextButton(onClick={onEditIssue(s)}){Text("Editar",color=Gold)};TextButton(onClick={onDeleteIssue(s)}){Text("Eliminar",color=Red)}}}
+    if(s.devuelto>0)Text("Edición y eliminación bloqueadas porque ya hay devolución registrada.",fontSize=11.sp,color=Color.LightGray)
+   }}}
+  }
  }
 }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun EditMovementDialog(
+    receipt:EntradaReciente?,issue:SalidaReciente?,products:List<ProductoEntity>,onClose:()->Unit,
+    onSaveReceipt:(Long,Long,Long)->Unit,onSaveIssue:(Long,Long,Long)->Unit
+){
+    val selectedMovementKey=receipt?.loteId?:issue?.lineaId?:0L
+    var productId by remember(selectedMovementKey){mutableStateOf(receipt?.productoId?:issue?.productoId?:products.firstOrNull()?.id?:0L)}
+    var quantity by remember(selectedMovementKey){mutableStateOf((receipt?.cantidad?:issue?.cantidad?:0L).toString())}
+    var expanded by remember{mutableStateOf(false)}
+    val canChangeReceiptProduct=receipt==null||receipt.referenciasSalida==0
+    val netoFuera=receipt?.let{(it.cantidad-it.cantidadDisponible).coerceAtLeast(0)}?:0L
+    val amount=quantity.toLongOrNull()?:0L
+    val productExists=products.any{it.id==productId}
+    val valid=amount>0&&productExists&&(receipt==null||amount>=netoFuera)
+    AlertDialog(
+        onDismissRequest=onClose,
+        title={Text(if(receipt!=null)"Editar entrada" else "Editar entrega")},
+        text={Column(Modifier.heightIn(max=460.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+            ExposedDropdownMenuBox(expanded=expanded,onExpandedChange={if(canChangeReceiptProduct)expanded=it}){
+                OutlinedTextField(value=products.firstOrNull{it.id==productId}?.nombre?:"Producto",onValueChange={},readOnly=true,enabled=canChangeReceiptProduct,label={Text("Producto")},modifier=Modifier.menuAnchor().fillMaxWidth())
+                ExposedDropdownMenu(expanded=expanded,onDismissRequest={expanded=false}){products.forEach{p->DropdownMenuItem(text={Text("${p.nombre} · stock ${p.cantidadActual}")},onClick={productId=p.id;expanded=false})}}
+            }
+            Field("Cantidad",quantity,{quantity=it},true)
+            if(receipt!=null){
+                Text("Unidades netas aún fuera del almacén: $netoFuera. La cantidad nueva no puede ser menor.",fontSize=12.sp,color=Color.LightGray)
+                if(receipt.referenciasSalida>0)Text("Este lote ya tiene entregas asociadas; el producto queda bloqueado para conservar la trazabilidad.",fontSize=12.sp,color=Amber)
+            }
+        }},
+        confirmButton={TextButton(enabled=valid,onClick={if(receipt!=null)onSaveReceipt(receipt.loteId,productId,amount) else issue?.let{onSaveIssue(it.lineaId,productId,amount)}}){Text("Guardar cambios")}},
+        dismissButton={TextButton(onClick=onClose){Text("Cancelar")}}
+    )
+}
+
 @Composable private fun MoreScreen(contacts:List<ContactoEntity>,drivers:List<RepartidorEntity>,onContact:()->Unit,onDriver:()->Unit,onTrailers:()->Unit,onRoutes:()->Unit){Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("Configuración",fontSize=24.sp,fontWeight=FontWeight.Bold);ActionCard("Proveedores y clientes","${contacts.size} contactos registrados",onContact);ActionCard("Repartidores","${drivers.size} repartidores registrados",onDriver);ActionCard("Control diario de rutas","Configura y marca rutas surtidas",onRoutes);ActionCard("Días de trailer","Programa llegadas semanales",onTrailers);Text("Tus datos permanecen en este dispositivo. No requiere internet.",fontSize=13.sp,color=Green)} }
 @Composable private fun ActionCard(title:String,subtitle:String,onClick:()->Unit){Card(Modifier.fillMaxWidth().clickable(onClick = onClick),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124)),shape=RoundedCornerShape(16.dp)){Column(Modifier.padding(18.dp)){Text(title,fontWeight=FontWeight.Bold,fontSize=17.sp);Text(subtitle,color=Color.LightGray,fontSize=13.sp)}}}
 @Composable private fun EmptyState(title:String,sub:String){Column(Modifier.fillMaxWidth().padding(22.dp),horizontalAlignment=Alignment.CenterHorizontally){Text("📦",fontSize=34.sp);Text(title,fontWeight=FontWeight.Bold);Text(sub,color=Color.LightGray,fontSize=13.sp)}}

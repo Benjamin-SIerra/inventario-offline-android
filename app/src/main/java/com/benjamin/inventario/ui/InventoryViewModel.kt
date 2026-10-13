@@ -16,7 +16,7 @@ class InventoryViewModel(private val repo:InventoryRepository):ViewModel(){
  val trailers=repo.trailers.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
  val trailerDays=repo.trailerDays.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0)
  val low=repo.lowStock.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0);val empty=repo.outOfStock.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0)
- val receipts=repo.receiptsToday.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0);val issues=repo.issuesToday.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0);val recentIssues=repo.recentIssues.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+ val receipts=repo.receiptsToday.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0);val issues=repo.issuesToday.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0);val recentIssues=repo.recentIssues.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList());val recentReceipts=repo.recentReceipts.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
  val routeDate=LocalDate.now().toString()
  val routeDay:StateFlow<JornadaRutasEntity?> =repo.routeDay(routeDate).stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),null)
   val dailyRoutes:StateFlow<List<RutaDiariaEntity>> =routeDay.flatMapLatest{day->
@@ -36,8 +36,12 @@ class InventoryViewModel(private val repo:InventoryRepository):ViewModel(){
  fun configureRoutes(count:Int)=launchOp{repo.configureRouteDay(routeDate,count);_message.emit("Jornada configurada con $count rutas")}
  fun setRouteCompleted(number:Int,completed:Boolean)=launchOp{repo.setRouteCompleted(routeDate,number,completed)}
  fun receive(id:Long,q:Long,c:ContactoEntity?)=launchOp{repo.receive(id,q,c)}
- fun returnUnits(lineId:Long,q:Long)=launchOp{repo.returnUnits(lineId,q);_message.emit("Devolución registrada y asignada al lote de origen")}
+ fun returnUnits(lineId:Long,q:Long)=launchOp{repo.returnUnits(lineId,q);_message.emit("Devolución registrada")}
  fun issue(id:Long,q:Long,d:RepartidorEntity?)=launchOp{val used=repo.issue(id,q,d);_message.emit("Entrega registrada · FIFO ${used.joinToString{ "lote ${it.first}: ${it.second}" }}")}
+ fun editReceipt(lotId:Long,productId:Long,quantity:Long)=launchOp{repo.editReceipt(lotId,productId,quantity);_message.emit("Entrada actualizada; stock ajustado")}
+ fun deleteReceipt(lotId:Long)=launchOp{repo.deleteReceipt(lotId);_message.emit("Entrada eliminada; stock revertido")}
+ fun editIssue(lineId:Long,productId:Long,quantity:Long)=launchOp{repo.editIssue(lineId,productId,quantity);_message.emit("Entrega actualizada; stock ajustado")}
+ fun deleteIssue(lineId:Long)=launchOp{repo.deleteIssue(lineId);_message.emit("Entrega eliminada; stock revertido")}
  private fun launchOp(block:suspend()->Unit){viewModelScope.launch{runCatching{block()}.onFailure{_message.emit(it.message?:"No se pudo guardar")}}}
  companion object{fun factory(repo:InventoryRepository)=object:ViewModelProvider.Factory{@Suppress("UNCHECKED_CAST") override fun<T:ViewModel>create(modelClass:Class<T>):T=InventoryViewModel(repo) as T}}
 }

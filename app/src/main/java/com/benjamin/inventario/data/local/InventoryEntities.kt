@@ -37,5 +37,8 @@ data class RutaDiariaEntity(
 )
 data class LoteFIFO(val id: Long, val entradaId: Long, val recibidoEnEpochMillis: Long, val cantidadDisponible: Long)
 data class ProductoMovido(val productoId: Long, val productoNombre: String, val unidades: Long)
-data class SalidaReciente(val lineaId:Long,val salidaId:Long,val productoId:Long,val productoNombre:String,val cantidad:Long,val repartidorNombre:String?,val fechaEpochMillis:Long)
+data class SalidaReciente(val lineaId:Long,val salidaId:Long,val productoId:Long,val productoNombre:String,val cantidad:Long,val repartidorNombre:String?,val fechaEpochMillis:Long,val devuelto:Long) {
+    val pendiente: Long get() = (cantidad - devuelto).coerceAtLeast(0)
+}
+data class EntradaReciente(val entradaId:Long,val loteId:Long,val productoId:Long,val productoNombre:String,val cantidad:Long,val cantidadDisponible:Long,val proveedorNombre:String?,val fechaEpochMillis:Long,val referenciasSalida:Int)
 data class LoteEntregado(val loteId:Long,val cantidad:Long,val recibidoEnEpochMillis:Long)
