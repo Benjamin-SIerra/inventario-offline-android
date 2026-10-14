@@ -51,6 +51,27 @@ class InventoryMigrationTest {
         migrated.close()
     }
 
+    @Test
+    fun migration3To4AddsProductCodeWeekSettingAndBatchTotalWithoutLosingRows() {
+        helper.createDatabase(TEST_DB, 3).apply {
+            execSQL("INSERT INTO productos(id,nombre,unidad,minimo,maximo,cantidadActual,activo) VALUES(1,'Arroz','caja',1,10,4,1)")
+            execSQL("INSERT INTO repartidores(id,nombre,activo) VALUES(1,'Repartidor',1)")
+            execSQL("INSERT INTO entradas(id,fechaEpochMillis,nota) VALUES(1,1000,'entrada')")
+            execSQL("INSERT INTO lotes(id,productoId,entradaId,recibidoEnEpochMillis,cantidadInicial,cantidadDisponible) VALUES(1,1,1,1000,10,4)")
+            execSQL("INSERT INTO salidas(id,repartidorId,repartidorNombre,fechaEpochMillis,nota) VALUES(1,1,'Repartidor',2000,'carga')")
+            execSQL("INSERT INTO salida_lineas(id,salidaId,productoId,productoNombre,cantidad,fechaEpochMillis) VALUES(1,1,1,'Arroz',6,2000),(2,1,1,'Arroz',3,2000)")
+            close()
+        }
+        val migrated=helper.runMigrationsAndValidate(TEST_DB,4,true,MIGRATION_3_4)
+        assertEquals("",migrated.query("SELECT codigo FROM productos WHERE id=1").use{it.moveToFirst();it.getString(0)})
+        assertEquals(1,scalar(migrated,"SELECT COUNT(*) FROM salida_lineas WHERE id=1 AND productoCodigo=''"))
+        assertEquals(9,scalar(migrated,"SELECT cantidadTotal FROM salidas WHERE id=1"))
+        assertEquals(1,scalar(migrated,"SELECT inicioSemana FROM configuracion_semanal WHERE id=1"))
+        assertEquals(1,scalar(migrated,"SELECT COUNT(*) FROM lotes WHERE id=1 AND cantidadDisponible=4"))
+        assertEquals(0,migrated.query("PRAGMA foreign_key_check").use{it.count})
+        migrated.close()
+    }
+
     private fun columns(db: androidx.sqlite.db.SupportSQLiteDatabase, table: String): List<String> =
         db.query("PRAGMA table_info(`$table`)").use { cursor ->
             buildList { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }

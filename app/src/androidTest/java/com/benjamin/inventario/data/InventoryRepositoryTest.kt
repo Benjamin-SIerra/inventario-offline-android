@@ -8,6 +8,7 @@ import com.benjamin.inventario.data.local.InventoryDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,7 +21,7 @@ class InventoryRepositoryTest {
         val db = database()
         try {
             val repo = InventoryRepository(db)
-            repo.saveProduct("Arroz", "caja", 1, 20)
+            repo.saveProduct("Arroz", "", "caja", 1, 20)
             val product = repo.products.first().single()
             repo.receive(product.id, 10)
             repo.issue(product.id, 4, null)
@@ -48,7 +49,7 @@ class InventoryRepositoryTest {
         val db = database()
         try {
             val repo = InventoryRepository(db)
-            repo.saveProduct("Arroz", "caja", 1, 20)
+            repo.saveProduct("Arroz", "", "caja", 1, 20)
             val product = repo.products.first().single()
             repo.receive(product.id, 2)
             repo.addDriver("Nombre incorrecto")
@@ -58,8 +59,8 @@ class InventoryRepositoryTest {
             repo.issue(product.id, 1, repo.allDrivers.first().single())
             repo.deleteDriver(driver.id)
 
-            assertTrue(repo.allDrivers.first().isEmpty())
-            assertNull(scalarNullableText(db, "SELECT repartidorId FROM salidas WHERE id=1"))
+            assertFalse(repo.allDrivers.first().single().activo)
+            assertEquals(1, scalar(db, "SELECT repartidorId FROM salidas WHERE id=1"))
             assertEquals("Nombre corregido", scalarText(db, "SELECT repartidorNombre FROM salidas WHERE id=1"))
         } finally {
             db.close()
@@ -67,11 +68,64 @@ class InventoryRepositoryTest {
     }
 
     @Test
+    fun multiProductDispatchCreatesOneAuditedHeaderAndSnapshotsProductCodes() = runBlocking {
+        val db=database()
+        try {
+            val repo=InventoryRepository(db)
+            repo.saveProduct("Arroz","AR-1","caja",1,20,8)
+            repo.saveProduct("Frijol","FR-2","bolsa",1,15,10)
+            val products=repo.products.first().associateBy{it.nombre}
+            repo.addDriver("Repartidor")
+            val driver=repo.allDrivers.first().single()
+            repo.issueBatch(listOf(products.getValue("Arroz").id to 2L,products.getValue("Frijol").id to 3L),driver,123456789L)
+
+            assertEquals(1,scalar(db,"SELECT COUNT(*) FROM salidas"))
+            assertEquals(5,scalar(db,"SELECT cantidadTotal FROM salidas WHERE id=1"))
+            assertEquals(123456789,scalar(db,"SELECT fechaEpochMillis FROM salidas WHERE id=1"))
+            assertEquals(2,scalar(db,"SELECT COUNT(*) FROM salida_lineas WHERE salidaId=1 AND productoCodigo IN ('AR-1','FR-2')"))
+            assertEquals(1,scalar(db,"SELECT COUNT(*) FROM salidas WHERE repartidorId=1"))
+            assertEquals(2,repo.issuesForDriver(driver).first().size)
+            assertEquals(5L,repo.issuesForDriver(driver).first().sumOf{it.cantidad})
+        } finally { db.close() }
+    }
+
+    @Test
+    fun insufficientLineRollsBackEntireMultiProductDispatch() = runBlocking {
+        val db=database()
+        try {
+            val repo=InventoryRepository(db)
+            repo.saveProduct("Arroz","AR-1","caja",1,20,8)
+            repo.saveProduct("Frijol","FR-2","bolsa",1,15,2)
+            val products=repo.products.first().associateBy{it.nombre}
+            val failed=runCatching { repo.issueBatch(listOf(products.getValue("Arroz").id to 2L,products.getValue("Frijol").id to 3L),null) }
+            assertTrue(failed.isFailure)
+            assertEquals(0,scalar(db,"SELECT COUNT(*) FROM salidas"))
+            assertEquals(0,scalar(db,"SELECT COUNT(*) FROM salida_lineas"))
+            assertEquals(10L,repo.products.first().sumOf{it.cantidadActual})
+        } finally { db.close() }
+    }
+
+    @Test
+    fun directProductStockAdjustmentKeepsLotsAndAuditInSync() = runBlocking {
+        val db=database()
+        try {
+            val repo=InventoryRepository(db)
+            val productId=repo.saveProduct("Arroz","AR-1","caja",1,20,10)
+            repo.updateProduct(productId,"Arroz","AR-2","caja",2,25,7)
+            assertEquals(7L,repo.products.first().single().cantidadActual)
+            assertEquals(7,scalar(db,"SELECT SUM(cantidadDisponible) FROM lotes WHERE productoId=$productId"))
+            assertEquals(2,scalar(db,"SELECT COUNT(*) FROM ajustes_inventario WHERE productoId=$productId"))
+            assertEquals(-3,scalar(db,"SELECT cantidadDelta FROM ajustes_inventario WHERE cantidadDelta<0"))
+            assertEquals("AR-2",repo.products.first().single().codigo)
+        } finally { db.close() }
+    }
+
+    @Test
     fun resetClearsProductsMovementsRoutesAndMetrics() = runBlocking {
         val db = database()
         try {
             val repo = InventoryRepository(db)
-            repo.saveProduct("Arroz", "caja", 1, 20)
+            repo.saveProduct("Arroz", "", "caja", 1, 20)
             val product = repo.products.first().single()
             repo.receive(product.id, 10)
             repo.issue(product.id, 3, null)
@@ -79,7 +133,7 @@ class InventoryRepositoryTest {
 
             repo.resetAllData()
 
-            listOf("productos", "entradas", "lotes", "salidas", "salida_lineas", "salida_lotes", "devoluciones", "repartidores", "trailers", "jornadas_rutas", "rutas_diarias").forEach { table ->
+            listOf("productos", "entradas", "lotes", "salidas", "salida_lineas", "salida_lotes", "devoluciones", "repartidores", "trailers", "jornadas_rutas", "rutas_diarias", "ajustes_inventario").forEach { table ->
                 assertEquals("$table should be empty", 0, scalar(db, "SELECT COUNT(*) FROM `$table`"))
             }
             assertEquals(0L, repo.movements(Period.MES).first())

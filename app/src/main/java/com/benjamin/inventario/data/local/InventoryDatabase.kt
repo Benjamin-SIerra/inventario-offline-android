@@ -21,6 +21,15 @@ interface InventoryDao {
     @Query("SELECT * FROM productos WHERE id=:id")
     suspend fun producto(id: Long): ProductoEntity?
 
+    @Query("UPDATE productos SET nombre=:nombre,codigo=:codigo,unidad=:unidad,minimo=:minimo,maximo=:maximo WHERE id=:id")
+    suspend fun actualizarProducto(id:Long,nombre:String,codigo:String,unidad:String,minimo:Long,maximo:Long):Int
+
+    @Query("UPDATE productos SET activo=0 WHERE id=:id")
+    suspend fun archivarProducto(id:Long):Int
+
+    @Query("DELETE FROM productos WHERE id=:id")
+    suspend fun eliminarProductoSinHistorial(id:Long):Int
+
     @Insert
     suspend fun crearProducto(p: ProductoEntity): Long
 
@@ -39,8 +48,8 @@ interface InventoryDao {
     @Query("UPDATE repartidores SET nombre=:nombre,activo=1 WHERE id=:id")
     suspend fun actualizarRepartidor(id: Long, nombre: String): Int
 
-    @Query("DELETE FROM repartidores WHERE id=:id")
-    suspend fun eliminarRepartidor(id: Long): Int
+    @Query("UPDATE repartidores SET activo=0 WHERE id=:id")
+        suspend fun eliminarRepartidor(id: Long): Int
 
     @Query("SELECT * FROM trailers WHERE activo=1 ORDER BY diaSemana")
     fun trailers(): Flow<List<TrailerProgramadoEntity>>
@@ -72,6 +81,12 @@ interface InventoryDao {
     @Query("UPDATE lotes SET cantidadDisponible=cantidadDisponible+:n WHERE id=:id")
     suspend fun restaurarLote(id: Long, n: Long): Int
 
+    @Query("SELECT id,entradaId,recibidoEnEpochMillis,cantidadDisponible FROM lotes WHERE productoId=:pid AND cantidadDisponible>0 ORDER BY recibidoEnEpochMillis DESC,id DESC")
+    suspend fun lotesDisponiblesParaAjuste(pid:Long):List<LoteFIFO>
+
+    @Query("UPDATE lotes SET cantidadDisponible=cantidadDisponible-:n WHERE id=:id AND cantidadDisponible>=:n")
+    suspend fun reducirLoteDisponible(id:Long,n:Long):Int
+
     @Insert
     suspend fun insertarEntrada(e: EntradaEntity): Long
 
@@ -89,6 +104,12 @@ interface InventoryDao {
 
     @Insert
     suspend fun insertarDevolucion(d: DevolucionEntity)
+
+    @Insert
+    suspend fun insertarAjusteInventario(a:AjusteInventarioEntity)
+
+    @Query("UPDATE salidas SET cantidadTotal=(SELECT COALESCE(SUM(cantidad),0) FROM salida_lineas WHERE salidaId=:saleId) WHERE id=:saleId")
+    suspend fun recalcularTotalSalida(saleId:Long):Int
 
     @Query("SELECT COALESCE(SUM(cantidad),0) FROM devoluciones WHERE salidaLineaId=:line AND loteId=:lot")
     suspend fun totalDevuelto(line: Long, lot: Long): Long
@@ -111,6 +132,9 @@ interface InventoryDao {
     @Query("SELECT COUNT(*) FROM lotes WHERE entradaId=:entrada")
     suspend fun lotesDeEntrada(entrada: Long): Int
 
+    @Query("SELECT COUNT(*) FROM salida_lineas WHERE productoId=:id")
+    suspend fun referenciasProducto(id:Long):Int
+
     @Query("UPDATE lotes SET productoId=:producto,cantidadInicial=:inicial,cantidadDisponible=:disponible WHERE id=:id")
     suspend fun actualizarLote(id: Long, producto: Long, inicial: Long, disponible: Long): Int
 
@@ -123,8 +147,8 @@ interface InventoryDao {
     @Query("DELETE FROM salida_lotes WHERE salidaLineaId=:line")
     suspend fun eliminarAsignacionesLinea(line: Long): Int
 
-    @Query("UPDATE salida_lineas SET productoId=:producto,productoNombre=:nombre,cantidad=:cantidad WHERE id=:line")
-    suspend fun actualizarLineaSalida(line: Long, producto: Long, nombre: String, cantidad: Long): Int
+    @Query("UPDATE salida_lineas SET productoId=:producto,productoNombre=:nombre,productoCodigo=:codigo,cantidad=:cantidad WHERE id=:line")
+        suspend fun actualizarLineaSalida(line: Long, producto: Long, nombre: String, codigo:String, cantidad: Long): Int
 
     @Query("DELETE FROM salida_lineas WHERE id=:line")
     suspend fun eliminarLineaSalida(line: Long): Int
@@ -135,11 +159,32 @@ interface InventoryDao {
     @Query("DELETE FROM salidas WHERE id=:id")
     suspend fun eliminarSalida(id: Long): Int
 
-    @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,salida_lineas.cantidad,salidas.repartidorNombre,salida_lineas.fechaEpochMillis,COALESCE(SUM(devoluciones.cantidad),0) AS devuelto FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId LEFT JOIN devoluciones ON devoluciones.salidaLineaId=salida_lineas.id GROUP BY salida_lineas.id ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30")
+    @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,productoCodigo,salida_lineas.cantidad,salidas.repartidorId,salidas.repartidorNombre,salida_lineas.fechaEpochMillis,salidas.cantidadTotal,COALESCE(SUM(devoluciones.cantidad),0) AS devuelto FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId LEFT JOIN devoluciones ON devoluciones.salidaLineaId=salida_lineas.id GROUP BY salida_lineas.id ORDER BY salida_lineas.fechaEpochMillis DESC LIMIT 30")
     fun salidasRecientes(): Flow<List<SalidaReciente>>
+
+    @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,productoCodigo,salida_lineas.cantidad,salidas.repartidorId,salidas.repartidorNombre,salida_lineas.fechaEpochMillis,salidas.cantidadTotal,COALESCE(SUM(devoluciones.cantidad),0) AS devuelto FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId LEFT JOIN devoluciones ON devoluciones.salidaLineaId=salida_lineas.id WHERE (salidas.repartidorId=:driverId OR (salidas.repartidorId IS NULL AND salidas.repartidorNombre=:driverName)) GROUP BY salida_lineas.id ORDER BY salida_lineas.fechaEpochMillis DESC")
+    fun salidasPorRepartidor(driverId:Long,driverName:String):Flow<List<SalidaReciente>>
+
+    @Query("SELECT salida_lineas.id AS lineaId,salidas.id AS salidaId,productoId,productoNombre,productoCodigo,salida_lineas.cantidad,salidas.repartidorId,salidas.repartidorNombre,salida_lineas.fechaEpochMillis,salidas.cantidadTotal,COALESCE(SUM(devoluciones.cantidad),0) AS devuelto FROM salida_lineas JOIN salidas ON salidas.id=salida_lineas.salidaId LEFT JOIN devoluciones ON devoluciones.salidaLineaId=salida_lineas.id WHERE salida_lineas.fechaEpochMillis>=:desde AND salida_lineas.fechaEpochMillis<:hasta GROUP BY salida_lineas.id ORDER BY salida_lineas.fechaEpochMillis DESC")
+    fun salidasEnRango(desde:Long,hasta:Long):Flow<List<SalidaReciente>>
 
     @Query("SELECT entradas.id AS entradaId,lotes.id AS loteId,lotes.productoId AS productoId,productos.nombre AS productoNombre,lotes.cantidadInicial AS cantidad,lotes.cantidadDisponible AS cantidadDisponible,entradas.fechaEpochMillis AS fechaEpochMillis,COUNT(salida_lotes.id) AS referenciasSalida FROM entradas JOIN lotes ON lotes.entradaId=entradas.id JOIN productos ON productos.id=lotes.productoId LEFT JOIN salida_lotes ON salida_lotes.loteId=lotes.id GROUP BY lotes.id ORDER BY entradas.fechaEpochMillis DESC,lotes.id DESC LIMIT 30")
     fun entradasRecientes(): Flow<List<EntradaReciente>>
+
+    @Query("SELECT entradas.id AS entradaId,lotes.id AS loteId,lotes.productoId AS productoId,productos.nombre AS productoNombre,lotes.cantidadInicial AS cantidad,lotes.cantidadDisponible AS cantidadDisponible,entradas.fechaEpochMillis AS fechaEpochMillis,COUNT(salida_lotes.id) AS referenciasSalida FROM entradas JOIN lotes ON lotes.entradaId=entradas.id JOIN productos ON productos.id=lotes.productoId LEFT JOIN salida_lotes ON salida_lotes.loteId=lotes.id WHERE entradas.fechaEpochMillis>=:desde AND entradas.fechaEpochMillis<:hasta GROUP BY lotes.id ORDER BY entradas.fechaEpochMillis DESC,lotes.id DESC")
+    fun entradasEnRango(desde:Long,hasta:Long):Flow<List<EntradaReciente>>
+
+    @Query("SELECT devoluciones.id,COALESCE(salida_lineas.productoNombre,'Producto eliminado') AS productoNombre,salidas.repartidorNombre,devoluciones.cantidad,devoluciones.fechaEpochMillis FROM devoluciones JOIN salida_lineas ON salida_lineas.id=devoluciones.salidaLineaId JOIN salidas ON salidas.id=devoluciones.salidaId WHERE devoluciones.fechaEpochMillis>=:desde AND devoluciones.fechaEpochMillis<:hasta ORDER BY devoluciones.fechaEpochMillis DESC")
+    fun devolucionesEnRango(desde:Long,hasta:Long):Flow<List<DevolucionReciente>>
+
+    @Query("SELECT id,productoNombre,cantidadDelta,fechaEpochMillis,nota FROM ajustes_inventario WHERE fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta ORDER BY fechaEpochMillis DESC")
+    fun ajustesEnRango(desde:Long,hasta:Long):Flow<List<AjusteReciente>>
+
+    @Query("SELECT * FROM configuracion_semanal WHERE id=1")
+    fun configuracionSemanal():Flow<ConfiguracionSemanalEntity?>
+
+    @Insert(onConflict=OnConflictStrategy.REPLACE)
+    suspend fun guardarConfiguracionSemanal(config:ConfiguracionSemanalEntity)
 
     @Query("SELECT COALESCE(SUM(salida_lineas.cantidad-COALESCE(returned.total,0)),0) FROM salida_lineas LEFT JOIN (SELECT salidaLineaId,SUM(cantidad) AS total FROM devoluciones GROUP BY salidaLineaId) AS returned ON returned.salidaLineaId=salida_lineas.id WHERE productoId=:pid AND fechaEpochMillis>=:desde AND fechaEpochMillis<:hasta")
     suspend fun demanda(pid: Long, desde: Long, hasta: Long): Long
@@ -164,6 +209,9 @@ interface InventoryDao {
 
     @Query("UPDATE rutas_diarias SET completada=:completada WHERE fecha=:fecha AND numeroRuta=:numeroRuta")
     suspend fun marcarRuta(fecha: String, numeroRuta: Int, completada: Boolean): Int
+
+    @Query("DELETE FROM ajustes_inventario")
+    suspend fun limpiarAjustesInventario()
 
     @Query("DELETE FROM devoluciones")
     suspend fun limpiarDevoluciones()
@@ -202,8 +250,8 @@ interface InventoryDao {
 @Database(
     entities = [ProductoEntity::class, RepartidorEntity::class, EntradaEntity::class, LoteEntity::class,
         SalidaEntity::class, SalidaLineaEntity::class, SalidaLoteEntity::class, DevolucionEntity::class,
-        TrailerProgramadoEntity::class, JornadaRutasEntity::class, RutaDiariaEntity::class],
-    version = 3,
+        TrailerProgramadoEntity::class, JornadaRutasEntity::class, RutaDiariaEntity::class, ConfiguracionSemanalEntity::class, AjusteInventarioEntity::class],
+    version = 4,
     exportSchema = true
 )
 abstract class InventoryDatabase : RoomDatabase() {
@@ -269,5 +317,19 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
         database.execSQL("DROP TABLE `_migration_salidas`")
         database.execSQL("DROP TABLE `_migration_lotes`")
         database.execSQL("DROP TABLE `_migration_entradas`")
+    }
+}
+
+val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE productos ADD COLUMN codigo TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE salida_lineas ADD COLUMN productoCodigo TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE salidas ADD COLUMN cantidadTotal INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("UPDATE salidas SET cantidadTotal=(SELECT COALESCE(SUM(cantidad),0) FROM salida_lineas WHERE salidaId=salidas.id)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS configuracion_semanal (id INTEGER NOT NULL PRIMARY KEY, inicioSemana INTEGER NOT NULL)")
+        database.execSQL("INSERT OR IGNORE INTO configuracion_semanal (id,inicioSemana) VALUES (1,1)")
+        database.execSQL("CREATE TABLE IF NOT EXISTS ajustes_inventario (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, productoId INTEGER, productoNombre TEXT NOT NULL, cantidadDelta INTEGER NOT NULL, fechaEpochMillis INTEGER NOT NULL, nota TEXT NOT NULL, FOREIGN KEY(productoId) REFERENCES productos(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS index_ajustes_inventario_productoId ON ajustes_inventario(productoId)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS index_ajustes_inventario_fechaEpochMillis ON ajustes_inventario(fechaEpochMillis)")
     }
 }

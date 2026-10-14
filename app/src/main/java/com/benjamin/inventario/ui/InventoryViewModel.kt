@@ -13,6 +13,11 @@ import com.benjamin.inventario.data.local.TrailerProgramadoEntity
 import com.benjamin.inventario.data.local.EntradaReciente
 import com.benjamin.inventario.data.local.SalidaReciente
 import com.benjamin.inventario.data.local.ProductoEntity
+import com.benjamin.inventario.data.local.AjusteReciente
+import com.benjamin.inventario.data.local.DevolucionReciente
+import com.benjamin.inventario.domain.weekCycle
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +28,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.DayOfWeek
+import java.time.ZoneId
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class InventoryViewModel(private val repo: InventoryRepository) : ViewModel() {
@@ -46,14 +53,34 @@ class InventoryViewModel(private val repo: InventoryRepository) : ViewModel() {
 
     private val period = MutableStateFlow(Period.SEMANA)
     val selectedPeriod = period.asStateFlow()
-    val moved = period.flatMapLatest(repo::movements).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-    val ranking = period.flatMapLatest(repo::ranking).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val weekStartDay = repo.weekStartDay.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),DayOfWeek.MONDAY)
+    val moved = combine(period,weekStartDay){p,d->p to d}.flatMapLatest{(p,d)->repo.movements(p,d)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0L)
+    val ranking = combine(period,weekStartDay){p,d->p to d}.flatMapLatest{(p,d)->repo.ranking(p,d)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
+    private val weekOffset=MutableStateFlow(1)
+    val selectedWeekOffset=weekOffset.asStateFlow()
+    val historyRange=combine(weekStartDay,weekOffset){day,offset->
+        val start=weekCycle(LocalDate.now(),day).start.minusWeeks(offset.toLong())
+        val zone=ZoneId.systemDefault()
+        start.atStartOfDay(zone).toInstant().toEpochMilli() to start.plusWeeks(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    }.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),0L to 0L)
+    val historyReceipts=historyRange.flatMapLatest{(a,b)->repo.receiptsBetween(a,b)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList<EntradaReciente>())
+    val historyIssues=historyRange.flatMapLatest{(a,b)->repo.issuesBetween(a,b)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList<SalidaReciente>())
+    val historyReturns=historyRange.flatMapLatest{(a,b)->repo.returnsBetween(a,b)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList<DevolucionReciente>())
+    val historyAdjustments=historyRange.flatMapLatest{(a,b)->repo.adjustmentsBetween(a,b)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList<AjusteReciente>())
+    private val selectedDriver=MutableStateFlow<RepartidorEntity?>(null)
+    val driverProfile=selectedDriver.flatMapLatest{d->if(d==null) flowOf(emptyList()) else repo.issuesForDriver(d)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList<SalidaReciente>())
+    val driverProfileName=selectedDriver.map{it?.nombre}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),null)
+
     private val _suggestions = MutableStateFlow<List<OrderSuggestion>>(emptyList())
     val suggestions = _suggestions.asStateFlow()
     private val _message = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val message = _message.asSharedFlow()
 
     fun period(value: Period) { period.value = value }
+    fun chooseHistoryWeek(offset:Int){weekOffset.value=offset.coerceAtLeast(1)}
+    fun openDriverProfile(driver:RepartidorEntity){selectedDriver.value=driver}
+    fun closeDriverProfile(){selectedDriver.value=null}
+    fun setWeekStart(day:DayOfWeek)=launchOp{repo.saveWeekStart(day)}
 
     fun refreshSuggestions() {
         viewModelScope.launch {
@@ -63,7 +90,10 @@ class InventoryViewModel(private val repo: InventoryRepository) : ViewModel() {
         }
     }
 
-    fun saveProduct(name: String, unit: String, min: Long, max: Long) = launchOp { repo.saveProduct(name, unit, min, max) }
+    fun saveProduct(name:String,code:String,unit:String,min:Long,max:Long,stock:Long)=launchOp{repo.saveProduct(name,code,unit,min,max,stock)}
+    fun updateProduct(id:Long,name:String,code:String,unit:String,min:Long,max:Long,stock:Long)=launchOp{repo.updateProduct(id,name,code,unit,min,max,stock)}
+    fun deleteProduct(id:Long)=launchOp{repo.deleteProduct(id);_message.emit("Producto eliminado del almacén; su historial se conserva")}
+    fun issueBatch(lines:List<Pair<Long,Long>>,driver:RepartidorEntity?)=launchOp{repo.issueBatch(lines,driver);_message.emit("Carga registrada: ${lines.size} productos · ${lines.sumOf { it.second }} unidades · ${driver?.nombre ?: "Sin repartidor"}")}
     fun addDriver(name: String) = launchOp { repo.addDriver(name) }
     fun updateDriver(id: Long, name: String) = launchOp { repo.updateDriver(id, name) }
     fun deleteDriver(id: Long) = launchOp { repo.deleteDriver(id) }

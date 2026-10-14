@@ -18,14 +18,19 @@ import com.benjamin.inventario.data.*
 import com.benjamin.inventario.data.local.*
 import com.benjamin.inventario.domain.isWholeNumberInput
 import com.benjamin.inventario.domain.parseWholeNumber
+import com.benjamin.inventario.domain.matchesProductSearch
+import com.benjamin.inventario.domain.isLowStock
+import com.benjamin.inventario.domain.isValidMultiProductIssue
 import java.time.DayOfWeek
+import java.time.LocalDate
 
 private val Gold = Color(0xFFC8A84C)
 private val Green = Color(0xFF4CAF7D)
 private val Amber = Color(0xFFE6AE49)
 private val Red = Color(0xFFE05B62)
 
-private data class DeleteMovement(val receipt: Boolean, val id: Long)
+private data class DeleteMovement(val receipt:Boolean,val id:Long)
+private data class BatchLine(val productId:Long,val quantity:String)
 
 @Composable
 fun InventoryApp(db: InventoryDatabase) {
@@ -47,10 +52,23 @@ fun InventoryApp(db: InventoryDatabase) {
     val rank by vm.ranking.collectAsState()
     val period by vm.selectedPeriod.collectAsState()
     val suggestions by vm.suggestions.collectAsState()
+    val weekStartDay by vm.weekStartDay.collectAsState()
+    val weekOffset by vm.selectedWeekOffset.collectAsState()
+    val historyRange by vm.historyRange.collectAsState()
+    val historyReceipts by vm.historyReceipts.collectAsState()
+    val historyIssues by vm.historyIssues.collectAsState()
+    val historyAdjustments by vm.historyAdjustments.collectAsState()
+    val historyReturns by vm.historyReturns.collectAsState()
+    val driverHistory by vm.driverProfile.collectAsState()
+    val currentCycle=com.benjamin.inventario.domain.weekCycle(LocalDate.now(),weekStartDay)
 
     var tab by remember { mutableIntStateOf(0) }
     var showRouteControl by remember { mutableStateOf(false) }
     var showDriverManager by remember { mutableStateOf(false) }
+    var showWeeklyHistory by remember { mutableStateOf(false) }
+    var selectedDriverProfile by remember { mutableStateOf<RepartidorEntity?>(null) }
+    var editingProduct by remember { mutableStateOf<ProductoEntity?>(null) }
+    var deletingProduct by remember { mutableStateOf<ProductoEntity?>(null) }
     var dialog by remember { mutableStateOf("") }
     var toast by remember { mutableStateOf("") }
     var returnLine by remember { mutableStateOf<SalidaReciente?>(null) }
@@ -96,7 +114,7 @@ fun InventoryApp(db: InventoryDatabase) {
             }
             when (tab) {
                 0 -> Dashboard(products.size, low, empty, trailerDays, receipts, issues, moved, rank, period, vm, suggestions)
-                1 -> ProductScreen(products, onAdd = { dialog = "producto" })
+                1 -> ProductScreen(products,onAdd={editingProduct=null;dialog="producto"},onEdit={editingProduct=it;dialog="producto"},onDelete={deletingProduct=it})
                 2 -> MovementsScreen(
                     products = products,
                     drivers = drivers,
@@ -116,19 +134,24 @@ fun InventoryApp(db: InventoryDatabase) {
                         onBack = { showRouteControl = false }, onConfigure = vm::configureRoutes,
                         onToggle = vm::setRouteCompleted
                     )
+                    showWeeklyHistory -> WeeklyHistoryScreen(
+                        startEpoch=historyRange.first,endEpoch=historyRange.second,offset=weekOffset,
+                        receipts=historyReceipts,issues=historyIssues,returns=historyReturns,adjustments=historyAdjustments,
+                        onBack={showWeeklyHistory=false},onOffset=vm::chooseHistoryWeek
+                    )
+                    selectedDriverProfile != null -> DriverProfileScreen(
+                        driver=selectedDriverProfile!!,issues=driverHistory,onBack={selectedDriverProfile=null;vm.closeDriverProfile()}
+                    )
                     showDriverManager -> DriversScreen(
-                        drivers = allDrivers,
-                        onBack = { showDriverManager = false },
-                        onAdd = { editingDriver = null; dialog = "repartidor" },
-                        onEdit = { editingDriver = it; dialog = "repartidor" },
-                        onDelete = { deletingDriver = it }
+                        drivers=allDrivers,onBack={showDriverManager=false},
+                        onAdd={editingDriver=null;dialog="repartidor"},onEdit={editingDriver=it;dialog="repartidor"},
+                        onDelete={deletingDriver=it},onProfile={selectedDriverProfile=it;vm.openDriverProfile(it)}
                     )
                     else -> MoreScreen(
-                        drivers = allDrivers,
-                        onDrivers = { showDriverManager = true },
-                        onTrailers = { dialog = "trailers" },
-                        onRoutes = { showRouteControl = true },
-                        onReset = { showResetConfirmation = true }
+                        drivers=allDrivers,weekStart=weekStartDay,cycleStart=currentCycle.start,cycleEnd=currentCycle.lastDay,onDrivers={showDriverManager=true},
+                        onTrailers={dialog="trailers"},onRoutes={showRouteControl=true},
+                        onHistory={showWeeklyHistory=true;vm.chooseHistoryWeek(1)},onWeekStart=vm::setWeekStart,
+                        onReset={showResetConfirmation=true}
                     )
                 }
             }
@@ -139,11 +162,12 @@ fun InventoryApp(db: InventoryDatabase) {
             products = products,
             drivers = drivers,
             trailers = trailers,
-            editingDriver = editingDriver,
-            onClose = { dialog = ""; editingDriver = null },
-            onSaveProduct = { name, unit, min, max -> vm.saveProduct(name, unit, min, max); dialog = "" },
-            onReceive = { id, quantity -> vm.receive(id, quantity); dialog = "" },
-            onIssue = { id, quantity, driver -> vm.issue(id, quantity, driver); dialog = "" },
+            editingDriver=editingDriver,
+            editingProduct=editingProduct,
+            onClose={dialog="";editingDriver=null;editingProduct=null},
+            onSaveProduct={id,name,code,unit,min,max,stock->if(id==null)vm.saveProduct(name,code,unit,min,max,stock) else vm.updateProduct(id,name,code,unit,min,max,stock);dialog="";editingProduct=null},
+            onReceive={id,quantity->vm.receive(id,quantity);dialog=""},
+            onIssue={lines,driver->vm.issueBatch(lines,driver);dialog=""},
             onSaveDriver = { name -> vm.addDriver(name); dialog = "" },
             onUpdateDriver = { id, name -> vm.updateDriver(id, name); dialog = ""; editingDriver = null },
             onTrailer = vm::trailer
@@ -229,6 +253,14 @@ fun InventoryApp(db: InventoryDatabase) {
             },
             dismissButton = { TextButton(onClick = { showResetConfirmation = false }) { Text("Cancelar") } }
         )
+
+        if(deletingProduct!=null){
+            val product=deletingProduct!!
+            AlertDialog(onDismissRequest={deletingProduct=null},title={Text("Eliminar producto")},
+                text={Text("Se archivará ${product.nombre} y se conservarán sus movimientos. Primero debes llevar el stock a cero; no se eliminará si tiene unidades asignadas o en almacén.")},
+                confirmButton={TextButton(onClick={vm.deleteProduct(product.id);deletingProduct=null}){Text("Eliminar",color=Red)}},
+                dismissButton={TextButton(onClick={deletingProduct=null}){Text("Cancelar")}})
+        }
 
         if (toast.isNotBlank()) AlertDialog(
             onDismissRequest = { toast = "" },
@@ -354,36 +386,27 @@ private fun SimpleBars(data: List<Pair<String, Long>>) {
 }
 
 @Composable
-private fun ProductScreen(products: List<ProductoEntity>, onAdd: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Productos", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Color.Black)) { Text("+ Agregar") }
+private fun ProductScreen(products:List<ProductoEntity>,onAdd:()->Unit,onEdit:(ProductoEntity)->Unit,onDelete:(ProductoEntity)->Unit){
+    var query by remember { mutableStateOf("") }
+    var lowTab by remember { mutableIntStateOf(0) }
+    val matched=products.filter { matchesProductSearch(it.nombre,it.codigo,query) }
+    val visible=matched.filter { isLowStock(it.cantidadActual,it.minimo)==(lowTab==1) }
+    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically){Text("Productos",fontSize=23.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));Button(onClick=onAdd,colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Color.Black)){Text("+ Agregar")}}
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),label={Text("Buscar por nombre o código")},singleLine=true)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            listOf("Stock Normal","Stock Bajo").forEachIndexed { index,label->FilterChip(selected=lowTab==index,onClick={lowTab=index},label={Text("$label · ${matched.count{isLowStock(it.cantidadActual,it.minimo)==(index==1)}}")}) }
         }
-        if (products.isEmpty()) EmptyState("Tu almacén está vacío", "Agrega tu primer producto para empezar.")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(products, key = { it.id }) { product ->
-                val alert = when {
-                    product.cantidadActual == 0L -> "AGOTADO"
-                    product.cantidadActual <= product.minimo -> "BAJO"
-                    product.cantidadActual <= product.minimo + maxOf(1L, (product.minimo + 4) / 5) -> "CERCA DEL MÍNIMO"
-                    else -> "NORMAL"
-                }
-                val color = when (alert) {
-                    "AGOTADO", "BAJO" -> Red
-                    "CERCA DEL MÍNIMO" -> Amber
-                    else -> Green
-                }
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF202124)), shape = RoundedCornerShape(16.dp)) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(product.nombre, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Mín. ${product.minimo} · Máx. ${product.maximo} ${product.unidad}", color = Color.LightGray, fontSize = 12.sp)
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("${product.cantidadActual} ${product.unidad}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text(alert, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
+        if(visible.isEmpty()) EmptyState(if(query.isNotBlank())"Sin coincidencias" else if(lowTab==1)"Sin stock bajo" else "Tu almacén está vacío",if(query.isNotBlank())"Prueba con otro nombre o código." else "Agrega tu primer producto para empezar.")
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            items(visible,key={it.id}){product->
+                val isLow=isLowStock(product.cantidadActual,product.minimo)
+                val alert=if(product.cantidadActual==0L)"AGOTADO" else if(isLow)"STOCK BAJO" else "NORMAL"
+                val color=if(isLow)Red else Green
+                Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124)),shape=RoundedCornerShape(16.dp)){
+                    Column(Modifier.padding(14.dp)){
+                        Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(product.nombre,fontSize=17.sp,fontWeight=FontWeight.SemiBold);Text("Código ${product.codigo.ifBlank { "—" }} · Mín. ${product.minimo} · Máx. ${product.maximo} ${product.unidad}",color=Color.LightGray,fontSize=12.sp)};Column(horizontalAlignment=Alignment.End){Text("${product.cantidadActual} ${product.unidad}",fontSize=20.sp,fontWeight=FontWeight.Bold);Text(alert,color=color,fontSize=10.sp,fontWeight=FontWeight.Bold)}}
+                        Row {TextButton(onClick={onEdit(product)}){Text("Editar",color=Gold)};TextButton(onClick={onDelete(product)}){Text("Eliminar",color=Red)}}
                     }
                 }
             }
@@ -433,8 +456,9 @@ private fun MovementsScreen(
             items(recent, key = { "salida-${it.lineaId}" }) { sale ->
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF202124))) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(sale.productoNombre, fontWeight = FontWeight.SemiBold)
-                        Text("Entregado: ${sale.cantidad} u · Devuelto: ${sale.devuelto} u · Pendiente: ${sale.pendiente} u", fontSize = 12.sp, color = Color.LightGray)
+                        Text("${sale.productoNombre} · ${sale.productoCodigo.ifBlank { "sin código" }}", fontWeight = FontWeight.SemiBold)
+                        Text("Salida #${sale.salidaId} · ${formatTimestamp(sale.fechaEpochMillis)} · carga total ${sale.cantidadTotal} u",fontSize=11.sp,color=Gold)
+                        Text("Asignado al repartidor: ${sale.cantidad} u · Devuelto: ${sale.devuelto} u · En su poder: ${sale.pendiente} u", fontSize = 12.sp, color = Color.LightGray)
                         Text("Repartidor: ${sale.repartidorNombre ?: "—"}", fontSize = 11.sp, color = Color.LightGray)
                         Row {
                             TextButton(enabled = sale.pendiente > 0L, onClick = { onReturn(sale) }) {
@@ -503,46 +527,106 @@ private fun EditMovementDialog(
 }
 
 @Composable
-private fun MoreScreen(
-    drivers: List<RepartidorEntity>, onDrivers: () -> Unit, onTrailers: () -> Unit,
-    onRoutes: () -> Unit, onReset: () -> Unit
-) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Configuración", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        ActionCard("Repartidores", "${drivers.size} registrados · listar, editar o eliminar", onDrivers)
-        ActionCard("Control diario de rutas", "Configura y marca rutas surtidas", onRoutes)
-        ActionCard("Días de trailer", "Programa llegadas semanales", onTrailers)
-        ActionCard("Restablecer datos de prueba", "Borra el inventario y todas las métricas locales", onReset)
-        Text("Tus datos permanecen en este dispositivo. No requiere internet.", fontSize = 13.sp, color = Green)
+private fun MoreScreen(drivers:List<RepartidorEntity>,weekStart:DayOfWeek,cycleStart:LocalDate,cycleEnd:LocalDate,onDrivers:()->Unit,onTrailers:()->Unit,onRoutes:()->Unit,onHistory:()->Unit,onWeekStart:(DayOfWeek)->Unit,onReset:()->Unit){
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text("Configuración",fontSize=24.sp,fontWeight=FontWeight.Bold)
+        ActionCard("Repartidores","${drivers.size} registrados · perfiles, edición y búsqueda",onDrivers)
+        ActionCard("Historial semanal","Consulta entradas, entregas y devoluciones de semanas archivadas",onHistory)
+        ActionCard("Control diario de rutas","Configura y marca rutas surtidas",onRoutes)
+        ActionCard("Días de trailer","Programa llegadas semanales",onTrailers)
+        Text("Semana actual: $cycleStart — $cycleEnd",color=Gold,fontSize=13.sp)
+        Text("Inicio del ciclo semanal",fontWeight=FontWeight.SemiBold)
+        ExposedDropdownMenuBox(expanded=expanded,onExpandedChange={expanded=it}){
+            OutlinedTextField(value=weekStart.getDisplayName(java.time.format.TextStyle.FULL,java.util.Locale("es","MX")).replaceFirstChar(Char::uppercase),onValueChange={},readOnly=true,label={Text("El ciclo termina el día anterior")},modifier=Modifier.menuAnchor().fillMaxWidth())
+            ExposedDropdownMenu(expanded=expanded,onDismissRequest={expanded=false}){DayOfWeek.values().forEach{day->DropdownMenuItem(text={Text(day.getDisplayName(java.time.format.TextStyle.FULL,java.util.Locale("es","MX")).replaceFirstChar(Char::uppercase))},onClick={onWeekStart(day);expanded=false})}}
+        }
+        ActionCard("Restablecer datos de prueba","Borra el inventario y todas las métricas locales",onReset)
+        Text("Tus datos permanecen en este dispositivo. No requiere internet.",fontSize=13.sp,color=Green)
     }
 }
 
 @Composable
 private fun DriversScreen(
-    drivers: List<RepartidorEntity>, onBack: () -> Unit, onAdd: () -> Unit,
-    onEdit: (RepartidorEntity) -> Unit, onDelete: (RepartidorEntity) -> Unit
+    drivers:List<RepartidorEntity>,onBack:()->Unit,onAdd:()->Unit,
+    onEdit:(RepartidorEntity)->Unit,onDelete:(RepartidorEntity)->Unit,onProfile:(RepartidorEntity)->Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    var query by remember { mutableStateOf("") }
+    val shown=drivers.filter{it.nombre.contains(query,true)}
+    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Repartidores", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = onBack) { Text("Volver") }
         }
-        Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Color.Black)) { Text("+ Agregar repartidor") }
-        if (drivers.isEmpty()) EmptyState("Sin repartidores", "Agrega aquí a las personas que reciben entregas.")
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(drivers, key = { it.id }) { driver ->
+        Button(onClick=onAdd,colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Color.Black)){Text("+ Agregar repartidor")}
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),label={Text("Buscar repartidor")},singleLine=true)
+        if(shown.isEmpty()) EmptyState("Sin repartidores", "Agrega aquí a las personas que reciben entregas.")
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            items(shown,key={it.id}){driver->
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF202124)), shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(driver.nombre, fontWeight = FontWeight.SemiBold)
                             if (!driver.activo) Text("Inactivo · editar para reactivarlo", color = Amber, fontSize = 11.sp)
                         }
-                        TextButton(onClick = { onEdit(driver) }) { Text("Editar", color = Gold) }
+                        TextButton(onClick={onProfile(driver)}){Text("Perfil",color=Green)}
+                        TextButton(onClick={onEdit(driver)}) { Text("Editar", color = Gold) }
                         TextButton(onClick = { onDelete(driver) }) { Text("Eliminar", color = Red) }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun WeeklyHistoryScreen(startEpoch:Long,endEpoch:Long,offset:Int,receipts:List<EntradaReciente>,issues:List<SalidaReciente>,returns:List<DevolucionReciente>,adjustments:List<AjusteReciente>,onBack:()->Unit,onOffset:(Int)->Unit){
+    val zone=java.time.ZoneId.systemDefault()
+    val first=java.time.Instant.ofEpochMilli(startEpoch).atZone(zone).toLocalDate()
+    val last=java.time.Instant.ofEpochMilli(endEpoch).atZone(zone).toLocalDate().minusDays(1)
+    val formatter=java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+        item{Row(verticalAlignment=Alignment.CenterVertically){Text("Historial semanal",fontSize=22.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));TextButton(onClick=onBack){Text("Volver")}}}
+        item{Text("Semana ${offset} · ${first} al ${last}",color=Gold,fontWeight=FontWeight.SemiBold)}
+        item{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton(onClick={onOffset(offset+1)}){Text("← Semana anterior")};TextButton(enabled=offset>1,onClick={onOffset(offset-1)}){Text("Semana más reciente →")}}}
+        item{Text("Entradas (${receipts.size})",fontSize=18.sp,fontWeight=FontWeight.Bold)}
+        if(receipts.isEmpty()) item{Text("Sin entradas en esta semana",color=Color.LightGray)}
+        items(receipts,key={"h-receipt-${it.loteId}"}){e->HistoryCard("Entrada · ${e.productoNombre}","+${e.cantidad} u · ${java.time.Instant.ofEpochMilli(e.fechaEpochMillis).atZone(zone).format(formatter)}")}
+        item{Text("Entregas (${issues.size})",fontSize=18.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=8.dp))}
+        if(issues.isEmpty()) item{Text("Sin entregas en esta semana",color=Color.LightGray)}
+        items(issues,key={"h-issue-${it.lineaId}"}){i->HistoryCard("Entrega · ${i.productoNombre}","${i.cantidad} u · carga total ${i.cantidadTotal} u · ${i.repartidorNombre ?: "Sin repartidor"} · ${formatTimestamp(i.fechaEpochMillis)}")}
+        item{Text("Devoluciones (${returns.size})",fontSize=18.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=8.dp))}
+        if(returns.isEmpty()) item{Text("Sin devoluciones en esta semana",color=Color.LightGray)}
+        items(returns,key={"h-return-${it.id}"}){r->HistoryCard("Devolución · ${r.productoNombre}","+${r.cantidad} u · ${r.repartidorNombre ?: "Sin repartidor"} · ${java.time.Instant.ofEpochMilli(r.fechaEpochMillis).atZone(zone).format(formatter)}")}
+        item{Text("Ajustes directos de stock (${adjustments.size})",fontSize=18.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=8.dp))}
+        if(adjustments.isEmpty())item{Text("Sin ajustes directos en esta semana",color=Color.LightGray)}
+        items(adjustments,key={"h-adjustment-${it.id}"}){a->HistoryCard("Ajuste · ${a.productoNombre}","${if(a.cantidadDelta>0) "+" else ""}${a.cantidadDelta} u · ${a.nota} · ${formatTimestamp(a.fechaEpochMillis)}")}
+    }
+}
+
+@Composable
+private fun DriverProfileScreen(driver:RepartidorEntity,issues:List<SalidaReciente>,onBack:()->Unit){
+    var query by remember(driver.id){mutableStateOf("")}
+    val filtered=issues.filter{matchesProductSearch(it.productoNombre,it.productoCodigo,query)}
+    val zone=java.time.ZoneId.systemDefault()
+    val formatter=java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+    Column(Modifier.fillMaxSize().padding(horizontal=16.dp)){
+        Row(verticalAlignment=Alignment.CenterVertically){Text(driver.nombre,fontSize=22.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));TextButton(onClick=onBack){Text("Volver")}}
+        Text("Productos cargados, entregados y pendientes de devolución",color=Color.LightGray,fontSize=12.sp)
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),label={Text("Buscar producto en sus entregas")},singleLine=true)
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){
+            if(filtered.isEmpty()) item{EmptyState("Sin entregas",if(query.isBlank())"Este perfil aún no tiene movimientos." else "No hay coincidencias.")}
+            items(filtered,key={it.lineaId}){i->HistoryCard("${i.productoNombre} · ${i.cantidad} u","Carga #${i.salidaId} · total ${i.cantidadTotal} u · ${formatTimestamp(i.fechaEpochMillis)}\n${i.repartidorNombre ?: driver.nombre} · entregado ${i.cantidad} · devuelto ${i.devuelto} · en su poder ${i.pendiente}")}
+        }
+    }
+}
+
+private fun formatTimestamp(millis:Long):String=java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"))
+
+@Composable
+private fun HistoryCard(title:String,subtitle:String){
+    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124)),shape=RoundedCornerShape(14.dp)){
+        Column(Modifier.padding(12.dp)){Text(title,fontWeight=FontWeight.SemiBold);Text(subtitle,color=Color.LightGray,fontSize=12.sp)}
     }
 }
 
@@ -568,121 +652,88 @@ private fun EmptyState(title: String, subtitle: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EntryDialog(
-    kind: String, products: List<ProductoEntity>, drivers: List<RepartidorEntity>,
-    trailers: List<TrailerProgramadoEntity>, editingDriver: RepartidorEntity?, onClose: () -> Unit,
-    onSaveProduct: (String, String, Long, Long) -> Unit,
-    onReceive: (Long, Long) -> Unit,
-    onIssue: (Long, Long, RepartidorEntity?) -> Unit,
-    onSaveDriver: (String) -> Unit,
-    onUpdateDriver: (Long, String) -> Unit,
-    onTrailer: (Int, Boolean) -> Unit
-) {
-    var name by remember(kind, editingDriver?.id) { mutableStateOf(editingDriver?.nombre.orEmpty()) }
-    var unit by remember { mutableStateOf("unidad") }
-    var min by remember { mutableStateOf("5") }
-    var max by remember { mutableStateOf("20") }
-    var quantity by remember { mutableStateOf("") }
-    var selectedProduct by remember(products) { mutableStateOf(products.firstOrNull()?.id ?: 0L) }
+    kind:String,products:List<ProductoEntity>,drivers:List<RepartidorEntity>,trailers:List<TrailerProgramadoEntity>,
+    editingDriver:RepartidorEntity?,editingProduct:ProductoEntity?,onClose:()->Unit,
+    onSaveProduct:(Long?,String,String,String,Long,Long,Long)->Unit,
+    onReceive:(Long,Long)->Unit,onIssue:(List<Pair<Long,Long>>,RepartidorEntity?)->Unit,
+    onSaveDriver:(String)->Unit,onUpdateDriver:(Long,String)->Unit,onTrailer:(Int,Boolean)->Unit
+){
+    var name by remember(kind,editingProduct?.id,editingDriver?.id){mutableStateOf(editingProduct?.nombre?:editingDriver?.nombre.orEmpty())}
+    var code by remember(kind,editingProduct?.id){mutableStateOf(editingProduct?.codigo.orEmpty())}
+    var unit by remember(kind,editingProduct?.id){mutableStateOf(editingProduct?.unidad?:"unidad")}
+    var min by remember(kind,editingProduct?.id){mutableStateOf((editingProduct?.minimo?:5L).toString())}
+    var max by remember(kind,editingProduct?.id){mutableStateOf((editingProduct?.maximo?:20L).toString())}
+    var quantity by remember(kind,editingProduct?.id){mutableStateOf((editingProduct?.cantidadActual?:0L).toString())}
+    var selectedProduct by remember(products,editingProduct?.id){mutableLongStateOf(editingProduct?.id?:products.firstOrNull()?.id?:0L)}
+    val issueLines=remember(kind,products){mutableStateListOf(BatchLine(products.firstOrNull()?.id?:0L,""))}
     var driverIndex by remember { mutableIntStateOf(-1) }
     var openProduct by remember { mutableStateOf(false) }
     var openDriver by remember { mutableStateOf(false) }
-    val minimum = parseWholeNumber(min)
-    val maximum = parseWholeNumber(max)
-    val amount = parseWholeNumber(quantity)
-    val title = when (kind) {
-        "producto" -> "Nuevo producto"
-        "entrada" -> "Recibir producto"
-        "salida" -> "Registrar entrega"
-        "repartidor" -> if (editingDriver == null) "Nuevo repartidor" else "Editar repartidor"
-        else -> "Llegadas de trailers"
-    }
+    var openLineIndex by remember { mutableIntStateOf(-1) }
+    val minimum=parseWholeNumber(min);val maximum=parseWholeNumber(max);val amount=parseWholeNumber(quantity)
+    val title=when(kind){"producto"->if(editingProduct==null)"Nuevo producto" else "Editar producto";"entrada"->"Recibir producto";"salida"->"Carga multi-producto";"repartidor"->if(editingDriver==null)"Nuevo repartidor" else "Editar repartidor";else->"Llegadas de trailers"}
 
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text(title) },
-        text = {
-            Column(Modifier.heightIn(max = 490.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                when (kind) {
-                    "producto" -> {
-                        Field("Nombre del producto", name, { name = it })
-                        Field("Unidad (pza, caja, kg…)", unit, { unit = it })
-                        Field("Stock mínimo", min, { min = it }, numeric = true)
-                        Field("Stock máximo deseado", max, { max = it }, numeric = true)
-                    }
-                    "entrada", "salida" -> {
-                        if (products.isEmpty()) Text("Primero registra un producto.", color = Red) else {
-                            ExposedDropdownMenuBox(expanded = openProduct, onExpandedChange = { openProduct = it }) {
-                                OutlinedTextField(
-                                    value = products.firstOrNull { it.id == selectedProduct }?.nombre ?: "Producto",
-                                    onValueChange = {}, readOnly = true, label = { Text("Producto") },
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(expanded = openProduct, onDismissRequest = { openProduct = false }) {
-                                    products.forEach { product ->
-                                        DropdownMenuItem(
-                                            text = { Text("${product.nombre} · stock ${product.cantidadActual}") },
-                                            onClick = { selectedProduct = product.id; openProduct = false }
-                                        )
-                                    }
+    AlertDialog(onDismissRequest=onClose,title={Text(title)},text={
+        Column(Modifier.heightIn(max=500.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+            when(kind){
+                "producto"->{
+                    Field("Nombre del producto",name,{name=it})
+                    Field("Código (opcional)",code,{code=it})
+                    Field("Unidad (pza, caja, kg…)",unit,{unit=it})
+                    Field("Stock mínimo (alerta configurable)",min,{min=it},numeric=true)
+                    Field("Stock máximo deseado",max,{max=it},numeric=true)
+                    Field(if(editingProduct==null)"Inventario inicial (opcional)" else "Stock actual (ajuste directo)",quantity,{quantity=it},numeric=true)
+                    Text("El ajuste directo queda como movimiento de inventario inicial/ajuste, sin usar ‘Recibir lote’. No permite reducir por debajo de lo ya asignado.",fontSize=12.sp,color=Color.LightGray)
+                }
+                "entrada"->{
+                    ProductDropdown(products,selectedProduct,openProduct,{openProduct=it}){selectedProduct=it;openProduct=false}
+                    Field("Cantidad",quantity,{quantity=it},numeric=true)
+                }
+                "salida"->{
+                    if(products.isEmpty()) Text("Primero registra un producto.",color=Red) else {
+                        issueLines.forEachIndexed{index,line->
+                            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF202124))){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                                Row(verticalAlignment=Alignment.CenterVertically){Text("Producto ${index+1}",modifier=Modifier.weight(1f),fontWeight=FontWeight.SemiBold);if(issueLines.size>1)TextButton(onClick={issueLines.removeAt(index)}){Text("Quitar",color=Red)}}
+                                ExposedDropdownMenuBox(expanded=openLineIndex==index,onExpandedChange={openLineIndex=if(openLineIndex==index)-1 else index}){
+                                    OutlinedTextField(value=products.firstOrNull{it.id==line.productId}?.let{"${it.nombre} · stock ${it.cantidadActual}"}?:"Producto",onValueChange={},readOnly=true,label={Text("Producto")},modifier=Modifier.menuAnchor().fillMaxWidth())
+                                    ExposedDropdownMenu(expanded=openLineIndex==index,onDismissRequest={openLineIndex=-1}){products.forEach{product->DropdownMenuItem(text={Text("${product.nombre} · stock ${product.cantidadActual}")},onClick={issueLines[index]=line.copy(productId=product.id);openLineIndex=-1})}}
                                 }
-                            }
-                            Field("Cantidad", quantity, { quantity = it }, numeric = true)
+                                Field("Cantidad",line.quantity,{issueLines[index]=line.copy(quantity=it)},numeric=true)
+                            }}
                         }
-                        if (kind == "salida") {
-                            ExposedDropdownMenuBox(expanded = openDriver, onExpandedChange = { openDriver = it }) {
-                                OutlinedTextField(
-                                    value = drivers.getOrNull(driverIndex)?.nombre ?: "Sin repartidor",
-                                    onValueChange = {}, readOnly = true, label = { Text("Repartidor (opcional)") },
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                                )
-                                ExposedDropdownMenu(expanded = openDriver, onDismissRequest = { openDriver = false }) {
-                                    DropdownMenuItem(text = { Text("Sin repartidor") }, onClick = { driverIndex = -1; openDriver = false })
-                                    if (drivers.isEmpty()) DropdownMenuItem(text = { Text("Aún no hay repartidores") }, enabled = false, onClick = {})
-                                    drivers.forEachIndexed { index, driver ->
-                                        DropdownMenuItem(text = { Text(driver.nombre) }, onClick = { driverIndex = index; openDriver = false })
-                                    }
-                                }
-                            }
-                            Text("El descuento se asigna automáticamente a los lotes más antiguos (PEPS).", color = Color.LightGray, fontSize = 12.sp)
-                        }
-                    }
-                    "repartidor" -> Field("Nombre del repartidor", name, { name = it })
-                    "trailers" -> {
-                        Text("Marca los días habituales de llegada. Se cuentan días únicos por semana.")
-                        (1..7).forEach { day ->
-                            val enabled = trailers.any { it.diaSemana == day && it.activo }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = enabled, onCheckedChange = { onTrailer(day, it) })
-                                Text(DayOfWeek.of(day).name.lowercase().replaceFirstChar(Char::uppercase))
+                        TextButton(onClick={issueLines.add(BatchLine(products.first().id,""))}){Text("+ Agregar otro producto",color=Gold)}
+                        ExposedDropdownMenuBox(expanded=openDriver,onExpandedChange={openDriver=it}){
+                            OutlinedTextField(value=drivers.getOrNull(driverIndex)?.nombre?:"Sin repartidor",onValueChange={},readOnly=true,label={Text("Repartidor asignado")},modifier=Modifier.menuAnchor().fillMaxWidth())
+                            ExposedDropdownMenu(expanded=openDriver,onDismissRequest={openDriver=false}) {
+                                DropdownMenuItem(text={Text("Sin repartidor")},onClick={driverIndex=-1;openDriver=false})
+                                drivers.forEachIndexed { index, driver -> DropdownMenuItem(text={Text(driver.nombre)},onClick={driverIndex=index;openDriver=false}) }
                             }
                         }
+                        Text("Se guarda una sola salida auditada con fecha/hora, repartidor y total de unidades; cada producto conserva su detalle PEPS.",fontSize=12.sp,color=Color.LightGray)
                     }
                 }
+                "repartidor"->Field("Nombre del repartidor",name,{name=it})
+                "trailers"->{Text("Marca los días habituales de llegada. Se cuentan días únicos por semana.");(1..7).forEach{day->val enabled=trailers.any{it.diaSemana==day&&it.activo};Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=enabled,onCheckedChange={onTrailer(day,it)});Text(DayOfWeek.of(day).name.lowercase().replaceFirstChar(Char::uppercase))}}}
             }
-        },
-        confirmButton = {
-            when (kind) {
-                "producto" -> TextButton(
-                    enabled = name.isNotBlank() && minimum != null && maximum != null && maximum >= minimum,
-                    onClick = { onSaveProduct(name, unit, minimum!!, maximum!!) }
-                ) { Text("Guardar") }
-                "entrada" -> TextButton(
-                    enabled = products.any { it.id == selectedProduct } && amount != null && amount > 0L,
-                    onClick = { onReceive(selectedProduct, amount!!) }
-                ) { Text("Confirmar recepción") }
-                "salida" -> TextButton(
-                    enabled = products.any { it.id == selectedProduct } && amount != null && amount > 0L,
-                    onClick = { onIssue(selectedProduct, amount!!, drivers.getOrNull(driverIndex)) }
-                ) { Text("Confirmar salida PEPS") }
-                "repartidor" -> TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = { if (editingDriver == null) onSaveDriver(name) else onUpdateDriver(editingDriver.id, name) }
-                ) { Text("Guardar") }
-                else -> TextButton(onClick = onClose) { Text("Listo") }
-            }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } }
-    )
+        }
+    },confirmButton={
+        when(kind){
+            "producto"->TextButton(enabled=name.isNotBlank()&&minimum!=null&&maximum!=null&&maximum>=minimum&&amount!=null&&amount>=0L,onClick={onSaveProduct(editingProduct?.id,name,code,unit,minimum!!,maximum!!,amount!!)} ){Text("Guardar")}
+            "entrada"->TextButton(enabled=products.any{it.id==selectedProduct}&&amount!=null&&amount>0L,onClick={onReceive(selectedProduct,amount!!)} ){Text("Confirmar recepción")}
+            "salida"->{val quantities=issueLines.map{parseWholeNumber(it.quantity)};val dispatch=issueLines.mapIndexedNotNull{idx,line->quantities[idx]?.let{line.productId to it}};val available=products.associate{it.id to it.cantidadActual};val valid=dispatch.size==issueLines.size&&isValidMultiProductIssue(dispatch,available);TextButton(enabled=valid,onClick={onIssue(dispatch,drivers.getOrNull(driverIndex))}){Text("Confirmar carga")}}
+            "repartidor"->TextButton(enabled=name.isNotBlank(),onClick={if(editingDriver==null)onSaveDriver(name)else onUpdateDriver(editingDriver.id,name)}){Text("Guardar")}
+            else->TextButton(onClick=onClose){Text("Listo")}
+        }
+    },dismissButton={TextButton(onClick=onClose){Text("Cancelar")}})
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProductDropdown(products:List<ProductoEntity>,selected:Long,expanded:Boolean,onExpanded:(Boolean)->Unit,onSelected:(Long)->Unit){
+    ExposedDropdownMenuBox(expanded=expanded,onExpandedChange=onExpanded){
+        OutlinedTextField(value=products.firstOrNull{it.id==selected}?.let{"${it.nombre} · stock ${it.cantidadActual}"}?:"Producto",onValueChange={},readOnly=true,label={Text("Producto")},modifier=Modifier.menuAnchor().fillMaxWidth())
+        ExposedDropdownMenu(expanded=expanded,onDismissRequest={onExpanded(false)}){products.forEach{p->DropdownMenuItem(text={Text("${p.nombre} · stock ${p.cantidadActual}")},onClick={onSelected(p.id)})}}
+    }
 }
 
 @Composable

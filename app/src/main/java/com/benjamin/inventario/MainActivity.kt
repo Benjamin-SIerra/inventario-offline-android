@@ -10,13 +10,14 @@ import androidx.room.Room
 import com.benjamin.inventario.data.local.InventoryDatabase
 import com.benjamin.inventario.data.local.MIGRATION_1_2
 import com.benjamin.inventario.data.local.MIGRATION_2_3
+import com.benjamin.inventario.data.local.MIGRATION_3_4
 import com.benjamin.inventario.ui.InventoryApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val db = Room.databaseBuilder(applicationContext, InventoryDatabase::class.java, "inventario-local.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(

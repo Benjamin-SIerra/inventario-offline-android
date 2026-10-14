@@ -8,10 +8,13 @@ import com.benjamin.inventario.domain.planificarFifo
 import com.benjamin.inventario.domain.roundedDailyConsumption
 import com.benjamin.inventario.domain.roundedDemandForecast
 import com.benjamin.inventario.domain.suggestedOrderQuantity
+import com.benjamin.inventario.domain.weekCycle
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 class InventoryRepository(private val db: InventoryDatabase) {
     private val dao = db.dao()
@@ -27,6 +30,13 @@ class InventoryRepository(private val db: InventoryDatabase) {
     val issuesToday = dao.salidasHoy(todayStart(), todayEnd())
     val recentIssues = dao.salidasRecientes()
     val recentReceipts = dao.entradasRecientes()
+    val weekStartDay:Flow<DayOfWeek> = dao.configuracionSemanal().map { DayOfWeek.of((it?.inicioSemana ?: 1).coerceIn(1,7)) }
+    suspend fun saveWeekStart(day:DayOfWeek) = dao.guardarConfiguracionSemanal(ConfiguracionSemanalEntity(inicioSemana=day.value))
+    fun issuesForDriver(driver:RepartidorEntity) = dao.salidasPorRepartidor(driver.id,driver.nombre)
+    fun receiptsBetween(start:Long,end:Long) = dao.entradasEnRango(start,end)
+    fun issuesBetween(start:Long,end:Long) = dao.salidasEnRango(start,end)
+    fun returnsBetween(start:Long,end:Long) = dao.devolucionesEnRango(start,end)
+    fun adjustmentsBetween(start:Long,end:Long) = dao.ajustesEnRango(start,end)
 
     suspend fun returnUnits(lineId: Long, quantity: Long) = db.withTransaction {
         val line = dao.lineaSalida(lineId) ?: error("Entrega no encontrada")
@@ -73,8 +83,8 @@ class InventoryRepository(private val db: InventoryDatabase) {
         check(dao.ajustarStock(line.productoId, quantity) == 1)
     }
 
-    fun movements(period: Period) = period.range().let { dao.unidadesMovidas(it.first, it.second) }
-    fun ranking(period: Period) = period.range().let { dao.ranking(it.first, it.second) }
+    fun movements(period: Period, weekStart:DayOfWeek=DayOfWeek.MONDAY) = period.range(weekStart).let { dao.unidadesMovidas(it.first,it.second) }
+    fun ranking(period: Period, weekStart:DayOfWeek=DayOfWeek.MONDAY) = period.range(weekStart).let { dao.ranking(it.first,it.second) }
     fun routeDay(date: String) = dao.jornadaRutas(date)
     fun routesForDay(date: String, count: Int) = dao.rutasDiarias(date, count)
 
@@ -90,11 +100,35 @@ class InventoryRepository(private val db: InventoryDatabase) {
         check(dao.marcarRuta(date, number, completed) == 1) { "La ruta ya no existe en esta jornada" }
     }
 
-    suspend fun saveProduct(name: String, unit: String, min: Long, max: Long) {
-        require(name.isNotBlank() && min >= 0L && max >= min)
-        dao.crearProducto(ProductoEntity(
-            nombre = name.trim(), unidad = unit.trim().ifBlank { "unidad" }, minimo = min, maximo = max
-        ))
+    suspend fun saveProduct(name:String,code:String,unit:String,min:Long,max:Long,initialStock:Long=0L):Long = db.withTransaction {
+        require(name.isNotBlank() && min >= 0L && max >= min && initialStock >= 0L)
+        val id=dao.crearProducto(ProductoEntity(nombre=name.trim(),codigo=code.trim(),unidad=unit.trim().ifBlank { "unidad" },minimo=min,maximo=max))
+        if(initialStock>0L){ createCorrectionLot(id,initialStock,"Inventario inicial desde ficha de producto"); check(dao.ajustarStock(id,initialStock)==1); dao.insertarAjusteInventario(AjusteInventarioEntity(productoId=id,productoNombre=name.trim(),cantidadDelta=initialStock,fechaEpochMillis=System.currentTimeMillis(),nota="Inventario inicial desde ficha de producto")) }
+        id
+    }
+
+    suspend fun updateProduct(id:Long,name:String,code:String,unit:String,min:Long,max:Long,stock:Long) = db.withTransaction {
+        require(name.isNotBlank() && min>=0L && max>=min && stock>=0L)
+        val product=dao.producto(id)?:error("Producto no encontrado")
+        val delta=stock-product.cantidadActual
+        if(delta>0L){createCorrectionLot(id,delta,"Ajuste directo desde ficha de producto");check(dao.ajustarStock(id,delta)==1)}
+        else if(delta<0L){
+            var remaining=-delta
+            val lots=dao.lotesDisponiblesParaAjuste(id)
+            check(lots.sumOf { it.cantidadDisponible }>=remaining){"No se puede reducir el stock por debajo de las unidades asignadas a repartidores"}
+            for(lot in lots){if(remaining==0L)break;val amount=minOf(remaining,lot.cantidadDisponible);check(dao.reducirLoteDisponible(lot.id,amount)==1);remaining-=amount}
+            check(remaining==0L&&dao.ajustarStock(id,delta)==1)
+        }
+        if(delta!=0L)dao.insertarAjusteInventario(AjusteInventarioEntity(productoId=id,productoNombre=product.nombre,cantidadDelta=delta,fechaEpochMillis=System.currentTimeMillis(),nota="Ajuste directo desde ficha de producto"))
+        check(dao.actualizarProducto(id,name.trim(),code.trim(),unit.trim().ifBlank { "unidad" },min,max)==1)
+    }
+
+    suspend fun deleteProduct(id:Long) = db.withTransaction {
+        val product=dao.producto(id)?:error("Producto no encontrado")
+        check(product.cantidadActual==0L){"Ajusta primero el stock a cero antes de eliminar el producto"}
+        // Keep referenced catalog rows as inactive so historic movements and lot foreign keys remain valid.
+        if(dao.referenciasProducto(id)>0) check(dao.archivarProducto(id)==1)
+        else check(dao.archivarProducto(id)==1)
     }
 
     suspend fun addDriver(name: String) {
@@ -130,31 +164,32 @@ class InventoryRepository(private val db: InventoryDatabase) {
         check(dao.ajustarStock(productId, quantity) == 1)
     }
 
-    suspend fun issue(productId: Long, quantity: Long, driver: RepartidorEntity?, date: Long = System.currentTimeMillis()): List<Pair<Long, Long>> = db.withTransaction {
-        require(quantity > 0L)
-        val product = dao.producto(productId) ?: error("Producto no encontrado")
-        val lots = dao.lotesFifo(productId)
-        val total = lots.sumOf { it.cantidadDisponible }
-        require(total >= quantity) { "Stock insuficiente: hay $total ${product.unidad}" }
-        val allocations = planificarFifo(lots, quantity).map { it.loteId to it.cantidad }
-        val saleId = dao.insertarSalida(SalidaEntity(
-            repartidorId = driver?.id,
-            repartidorNombre = driver?.nombre,
-            fechaEpochMillis = date
-        ))
-        val lineId = dao.insertarLinea(SalidaLineaEntity(
-            salidaId = saleId,
-            productoId = product.id,
-            productoNombre = product.nombre,
-            cantidad = quantity,
-            fechaEpochMillis = date
-        ))
-        allocations.forEach { (lotId, amount) ->
-            check(dao.descontarLote(lotId, amount) == 1) { "El lote cambió; inténtalo de nuevo" }
-            dao.insertarAsignacion(SalidaLoteEntity(salidaLineaId = lineId, loteId = lotId, cantidad = amount))
+    suspend fun issue(productId: Long, quantity: Long, driver: RepartidorEntity?, date: Long = System.currentTimeMillis()): List<Pair<Long, Long>> =
+        issueBatch(listOf(productId to quantity),driver,date).flatMap { it.second }
+
+    suspend fun issueBatch(lines:List<Pair<Long,Long>>,driver:RepartidorEntity?,date:Long=System.currentTimeMillis()):List<Pair<Long,List<Pair<Long,Long>>>> = db.withTransaction {
+        require(lines.isNotEmpty()) { "Selecciona al menos un producto" }
+        require(lines.all { it.second>0L }) { "Todas las cantidades deben ser mayores que cero" }
+        require(lines.map { it.first }.distinct().size==lines.size) { "No repitas productos; agrega toda la cantidad en una sola línea" }
+        val prepared=lines.map { (productId,quantity)->
+            val product=dao.producto(productId)?:error("Producto no encontrado")
+            check(product.activo){"${product.nombre} está inactivo"}
+            val lots=dao.lotesFifo(productId)
+            val total=lots.sumOf { it.cantidadDisponible }
+            require(total>=quantity){"Stock insuficiente para ${product.nombre}: hay $total ${product.unidad}"}
+            Triple(product,quantity,planificarFifo(lots,quantity).map { it.loteId to it.cantidad })
         }
-        check(dao.ajustarStock(productId, -quantity) == 1)
-        allocations
+        val total=prepared.fold(0L){acc,item->Math.addExact(acc,item.second)}
+        val saleId=dao.insertarSalida(SalidaEntity(repartidorId=driver?.id,repartidorNombre=driver?.nombre,fechaEpochMillis=date,cantidadTotal=total))
+        prepared.map { (product,quantity,allocations)->
+            val lineId=dao.insertarLinea(SalidaLineaEntity(salidaId=saleId,productoId=product.id,productoNombre=product.nombre,productoCodigo=product.codigo,cantidad=quantity,fechaEpochMillis=date))
+            allocations.forEach { (lotId,amount)->
+                check(dao.descontarLote(lotId,amount)==1){"El lote cambió; inténtalo de nuevo"}
+                dao.insertarAsignacion(SalidaLoteEntity(salidaLineaId=lineId,loteId=lotId,cantidad=amount))
+            }
+            check(dao.ajustarStock(product.id,-quantity)==1)
+            product.id to allocations
+        }
     }
 
     suspend fun editIssue(lineId: Long, productId: Long, quantity: Long) = db.withTransaction {
@@ -172,7 +207,8 @@ class InventoryRepository(private val db: InventoryDatabase) {
             dao.insertarAsignacion(SalidaLoteEntity(salidaLineaId = lineId, loteId = allocation.loteId, cantidad = allocation.cantidad))
         }
         check(dao.ajustarStock(productId, -quantity) == 1)
-        check(dao.actualizarLineaSalida(lineId, productId, target.nombre, quantity) == 1)
+        check(dao.actualizarLineaSalida(lineId, productId, target.nombre, target.codigo, quantity) == 1)
+        check(dao.recalcularTotalSalida(line.salidaId)==1)
     }
 
     suspend fun deleteIssue(lineId: Long) = db.withTransaction {
@@ -183,6 +219,7 @@ class InventoryRepository(private val db: InventoryDatabase) {
         check(dao.eliminarAsignacionesLinea(lineId) == allocations.size)
         check(dao.eliminarLineaSalida(lineId) == 1)
         if (dao.lineasDeSalida(line.salidaId) == 0) check(dao.eliminarSalida(line.salidaId) == 1)
+        else check(dao.recalcularTotalSalida(line.salidaId)==1)
     }
 
     suspend fun editReceipt(lotId: Long, productId: Long, quantity: Long) = db.withTransaction {
@@ -219,6 +256,7 @@ class InventoryRepository(private val db: InventoryDatabase) {
 
     suspend fun resetAllData() = db.withTransaction {
         dao.limpiarDevoluciones()
+        dao.limpiarAjustesInventario()
         dao.limpiarAsignaciones()
         dao.limpiarLineasSalida()
         dao.limpiarSalidas()
@@ -270,11 +308,12 @@ class InventoryRepository(private val db: InventoryDatabase) {
 enum class Period {
     SEMANA, MES;
 
-    fun range(): Pair<Long, Long> {
-        val today = LocalDate.now()
-        val start = if (this == SEMANA) today.with(java.time.DayOfWeek.MONDAY) else today.withDayOfMonth(1)
-        val end = if (this == SEMANA) start.plusWeeks(1) else start.plusMonths(1)
-        val zone = ZoneId.systemDefault()
+    fun range(weekStart:DayOfWeek=DayOfWeek.MONDAY):Pair<Long,Long>{
+        val today=LocalDate.now()
+        val cycle=weekCycle(today,weekStart)
+        val start=if(this==SEMANA) cycle.start else today.withDayOfMonth(1)
+        val end=if(this==SEMANA) cycle.endExclusive else start.plusMonths(1)
+        val zone=ZoneId.systemDefault()
         return start.atStartOfDay(zone).toInstant().toEpochMilli() to end.atStartOfDay(zone).toInstant().toEpochMilli()
     }
 }
