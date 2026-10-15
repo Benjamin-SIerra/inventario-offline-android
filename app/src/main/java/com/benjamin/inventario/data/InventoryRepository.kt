@@ -209,6 +209,23 @@ class InventoryRepository(private val db: InventoryDatabase) {
         check(dao.ajustarStock(productId, -quantity) == 1)
         check(dao.actualizarLineaSalida(lineId, productId, target.nombre, target.codigo, quantity) == 1)
         check(dao.recalcularTotalSalida(line.salidaId)==1)
+        val changedProduct = line.productoId != productId
+        val changedQuantity = line.cantidad != quantity
+        if (changedProduct || changedQuantity) {
+            dao.insertarAuditoriaCarga(AuditoriaCargaEntity(
+                salidaId = line.salidaId,
+                salidaLineaId = lineId,
+                tipo = if (changedProduct) "CAMBIO_PRODUCTO" else "CORRECCION_CANTIDAD",
+                productoAnteriorId = line.productoId,
+                productoAnteriorNombre = line.productoNombre,
+                productoNuevoId = productId,
+                productoNuevoNombre = target.nombre,
+                cantidadAnterior = line.cantidad,
+                cantidadNueva = quantity,
+                fechaEpochMillis = System.currentTimeMillis(),
+                nota = if (changedProduct) "Intercambio de producto; devolución al inventario y nueva salida PEPS" else "Corrección de cantidad asignada"
+            ))
+        }
     }
 
     suspend fun deleteIssue(lineId: Long) = db.withTransaction {
@@ -257,6 +274,7 @@ class InventoryRepository(private val db: InventoryDatabase) {
     suspend fun resetAllData() = db.withTransaction {
         dao.limpiarDevoluciones()
         dao.limpiarAjustesInventario()
+        dao.limpiarAuditoriaCargas()
         dao.limpiarAsignaciones()
         dao.limpiarLineasSalida()
         dao.limpiarSalidas()

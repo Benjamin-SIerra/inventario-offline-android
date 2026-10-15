@@ -108,6 +108,9 @@ interface InventoryDao {
     @Insert
     suspend fun insertarAjusteInventario(a:AjusteInventarioEntity)
 
+    @Insert
+    suspend fun insertarAuditoriaCarga(a: AuditoriaCargaEntity)
+
     @Query("UPDATE salidas SET cantidadTotal=(SELECT COALESCE(SUM(cantidad),0) FROM salida_lineas WHERE salidaId=:saleId) WHERE id=:saleId")
     suspend fun recalcularTotalSalida(saleId:Long):Int
 
@@ -213,6 +216,9 @@ interface InventoryDao {
     @Query("DELETE FROM ajustes_inventario")
     suspend fun limpiarAjustesInventario()
 
+    @Query("DELETE FROM auditoria_cargas")
+    suspend fun limpiarAuditoriaCargas()
+
     @Query("DELETE FROM devoluciones")
     suspend fun limpiarDevoluciones()
 
@@ -250,8 +256,8 @@ interface InventoryDao {
 @Database(
     entities = [ProductoEntity::class, RepartidorEntity::class, EntradaEntity::class, LoteEntity::class,
         SalidaEntity::class, SalidaLineaEntity::class, SalidaLoteEntity::class, DevolucionEntity::class,
-        TrailerProgramadoEntity::class, JornadaRutasEntity::class, RutaDiariaEntity::class, ConfiguracionSemanalEntity::class, AjusteInventarioEntity::class],
-    version = 4,
+        TrailerProgramadoEntity::class, JornadaRutasEntity::class, RutaDiariaEntity::class, ConfiguracionSemanalEntity::class, AjusteInventarioEntity::class, AuditoriaCargaEntity::class],
+    version = 5,
     exportSchema = true
 )
 abstract class InventoryDatabase : RoomDatabase() {
@@ -331,5 +337,15 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
         database.execSQL("CREATE TABLE IF NOT EXISTS ajustes_inventario (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, productoId INTEGER, productoNombre TEXT NOT NULL, cantidadDelta INTEGER NOT NULL, fechaEpochMillis INTEGER NOT NULL, nota TEXT NOT NULL, FOREIGN KEY(productoId) REFERENCES productos(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
         database.execSQL("CREATE INDEX IF NOT EXISTS index_ajustes_inventario_productoId ON ajustes_inventario(productoId)")
         database.execSQL("CREATE INDEX IF NOT EXISTS index_ajustes_inventario_fechaEpochMillis ON ajustes_inventario(fechaEpochMillis)")
+    }
+}
+
+
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS `auditoria_cargas` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `salidaId` INTEGER NOT NULL, `salidaLineaId` INTEGER NOT NULL, `tipo` TEXT NOT NULL, `productoAnteriorId` INTEGER NOT NULL, `productoAnteriorNombre` TEXT NOT NULL, `productoNuevoId` INTEGER NOT NULL, `productoNuevoNombre` TEXT NOT NULL, `cantidadAnterior` INTEGER NOT NULL, `cantidadNueva` INTEGER NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, `nota` TEXT NOT NULL)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_salidaLineaId` ON `auditoria_cargas` (`salidaLineaId`)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_salidaId` ON `auditoria_cargas` (`salidaId`)")
+        database.execSQL("CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_fechaEpochMillis` ON `auditoria_cargas` (`fechaEpochMillis`)")
     }
 }

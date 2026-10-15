@@ -143,6 +143,44 @@ class InventoryRepositoryTest {
         }
     }
 
+    @Test
+    fun changingAssignedProductRestoresOriginalLotsUsesFifoAndWritesAudit() = runBlocking {
+        val db = database()
+        try {
+            val repo = InventoryRepository(db)
+            val fromId = repo.saveProduct("Papa Fuego", "PF", "bolsa", 1, 20, 5)
+            val toId = repo.saveProduct("Papa Queso", "PQ", "bolsa", 1, 20, 6)
+            repo.issue(fromId, 3, null)
+            val line = repo.recentIssues.first().single()
+
+            repo.editIssue(line.lineaId, toId, 2)
+
+            assertEquals(5L, repo.products.first().first { it.id == fromId }.cantidadActual)
+            assertEquals(4L, repo.products.first().first { it.id == toId }.cantidadActual)
+            assertEquals("Papa Queso", repo.recentIssues.first().single().productoNombre)
+            assertEquals(2L, repo.recentIssues.first().single().cantidad)
+            assertEquals(1, scalar(db, "SELECT COUNT(*) FROM auditoria_cargas WHERE salidaLineaId=${line.lineaId} AND tipo='CAMBIO_PRODUCTO'"))
+            assertEquals(1, scalar(db, "SELECT COUNT(*) FROM salida_lotes WHERE salidaLineaId=${line.lineaId}"))
+        } finally { db.close() }
+    }
+
+    @Test
+    fun correctingAssignedQuantityWritesAuditAndKeepsDriverBalance() = runBlocking {
+        val db = database()
+        try {
+            val repo = InventoryRepository(db)
+            val productId = repo.saveProduct("Papa Fuego", "PF", "bolsa", 1, 20, 8)
+            repo.issue(productId, 5, null)
+            val line = repo.recentIssues.first().single()
+
+            repo.editIssue(line.lineaId, productId, 3)
+
+            assertEquals(5L, repo.products.first().single().cantidadActual)
+            assertEquals(3L, repo.recentIssues.first().single().pendiente)
+            assertEquals(1, scalar(db, "SELECT COUNT(*) FROM auditoria_cargas WHERE salidaLineaId=${line.lineaId} AND tipo='CORRECCION_CANTIDAD'"))
+        } finally { db.close() }
+    }
+
     private fun database(): InventoryDatabase = Room.inMemoryDatabaseBuilder(
         ApplicationProvider.getApplicationContext<Context>(),
         InventoryDatabase::class.java

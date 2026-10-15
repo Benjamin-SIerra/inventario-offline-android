@@ -37,6 +37,23 @@ data class RutaDiariaEntity(
 data class ConfiguracionSemanalEntity(@PrimaryKey val id: Int = 1, val inicioSemana: Int = 1)
 @Entity(tableName="ajustes_inventario",foreignKeys=[ForeignKey(entity=ProductoEntity::class,parentColumns=["id"],childColumns=["productoId"],onDelete=ForeignKey.SET_NULL)],indices=[Index("productoId"),Index("fechaEpochMillis")])
 data class AjusteInventarioEntity(@PrimaryKey(autoGenerate=true) val id:Long=0,val productoId:Long?,val productoNombre:String,val cantidadDelta:Long,val fechaEpochMillis:Long,val nota:String="")
+
+/** Registro inmutable de correcciones e intercambios sobre una carga ya asignada. */
+@Entity(tableName="auditoria_cargas", indices=[Index("salidaLineaId"), Index("salidaId"), Index("fechaEpochMillis")])
+data class AuditoriaCargaEntity(
+    @PrimaryKey(autoGenerate=true) val id:Long=0,
+    val salidaId:Long,
+    val salidaLineaId:Long,
+    val tipo:String,
+    val productoAnteriorId:Long,
+    val productoAnteriorNombre:String,
+    val productoNuevoId:Long,
+    val productoNuevoNombre:String,
+    val cantidadAnterior:Long,
+    val cantidadNueva:Long,
+    val fechaEpochMillis:Long,
+    val nota:String=""
+)
 data class LoteFIFO(val id: Long, val entradaId: Long, val recibidoEnEpochMillis: Long, val cantidadDisponible: Long)
 data class ProductoMovido(val productoId: Long, val productoNombre: String, val unidades: Long)
 data class SalidaReciente(val lineaId:Long,val salidaId:Long,val productoId:Long,val productoNombre:String,val productoCodigo:String,val cantidad:Long,val repartidorId:Long?,val repartidorNombre:String?,val fechaEpochMillis:Long,val cantidadTotal:Long,val devuelto:Long) {

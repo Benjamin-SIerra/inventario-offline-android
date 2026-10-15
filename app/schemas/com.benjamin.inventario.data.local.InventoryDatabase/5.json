@@ -1,0 +1,1008 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "73ba0a3ab7bf96beb393d143727c9854",
+    "entities": [
+      {
+        "tableName": "productos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `codigo` TEXT NOT NULL, `unidad` TEXT NOT NULL, `minimo` INTEGER NOT NULL, `maximo` INTEGER NOT NULL, `cantidadActual` INTEGER NOT NULL, `activo` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "codigo",
+            "columnName": "codigo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unidad",
+            "columnName": "unidad",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "minimo",
+            "columnName": "minimo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maximo",
+            "columnName": "maximo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadActual",
+            "columnName": "cantidadActual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activo",
+            "columnName": "activo",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_productos_nombre",
+            "unique": true,
+            "columnNames": [
+              "nombre"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_productos_nombre` ON `${TABLE_NAME}` (`nombre`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "repartidores",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nombre` TEXT NOT NULL, `activo` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activo",
+            "columnName": "activo",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_repartidores_nombre",
+            "unique": false,
+            "columnNames": [
+              "nombre"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_repartidores_nombre` ON `${TABLE_NAME}` (`nombre`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "entradas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, `nota` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_entradas_fechaEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "fechaEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_entradas_fechaEpochMillis` ON `${TABLE_NAME}` (`fechaEpochMillis`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "lotes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `productoId` INTEGER NOT NULL, `entradaId` INTEGER NOT NULL, `recibidoEnEpochMillis` INTEGER NOT NULL, `cantidadInicial` INTEGER NOT NULL, `cantidadDisponible` INTEGER NOT NULL, FOREIGN KEY(`productoId`) REFERENCES `productos`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`entradaId`) REFERENCES `entradas`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoId",
+            "columnName": "productoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entradaId",
+            "columnName": "entradaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recibidoEnEpochMillis",
+            "columnName": "recibidoEnEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadInicial",
+            "columnName": "cantidadInicial",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadDisponible",
+            "columnName": "cantidadDisponible",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lotes_productoId_recibidoEnEpochMillis_id",
+            "unique": false,
+            "columnNames": [
+              "productoId",
+              "recibidoEnEpochMillis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lotes_productoId_recibidoEnEpochMillis_id` ON `${TABLE_NAME}` (`productoId`, `recibidoEnEpochMillis`, `id`)"
+          },
+          {
+            "name": "index_lotes_entradaId",
+            "unique": false,
+            "columnNames": [
+              "entradaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lotes_entradaId` ON `${TABLE_NAME}` (`entradaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "productos",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "entradas",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "entradaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "salidas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `repartidorId` INTEGER, `repartidorNombre` TEXT, `fechaEpochMillis` INTEGER NOT NULL, `cantidadTotal` INTEGER NOT NULL, `nota` TEXT NOT NULL, FOREIGN KEY(`repartidorId`) REFERENCES `repartidores`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "repartidorId",
+            "columnName": "repartidorId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "repartidorNombre",
+            "columnName": "repartidorNombre",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadTotal",
+            "columnName": "cantidadTotal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_salidas_repartidorId",
+            "unique": false,
+            "columnNames": [
+              "repartidorId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salidas_repartidorId` ON `${TABLE_NAME}` (`repartidorId`)"
+          },
+          {
+            "name": "index_salidas_fechaEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "fechaEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salidas_fechaEpochMillis` ON `${TABLE_NAME}` (`fechaEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "repartidores",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "repartidorId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "salida_lineas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `salidaId` INTEGER NOT NULL, `productoId` INTEGER NOT NULL, `productoNombre` TEXT NOT NULL, `productoCodigo` TEXT NOT NULL, `cantidad` INTEGER NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, FOREIGN KEY(`salidaId`) REFERENCES `salidas`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`productoId`) REFERENCES `productos`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaId",
+            "columnName": "salidaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoId",
+            "columnName": "productoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoNombre",
+            "columnName": "productoNombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoCodigo",
+            "columnName": "productoCodigo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_salida_lineas_salidaId",
+            "unique": false,
+            "columnNames": [
+              "salidaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salida_lineas_salidaId` ON `${TABLE_NAME}` (`salidaId`)"
+          },
+          {
+            "name": "index_salida_lineas_productoId_fechaEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "productoId",
+              "fechaEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salida_lineas_productoId_fechaEpochMillis` ON `${TABLE_NAME}` (`productoId`, `fechaEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "salidas",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "salidaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "productos",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "salida_lotes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `salidaLineaId` INTEGER NOT NULL, `loteId` INTEGER, `cantidad` INTEGER NOT NULL, FOREIGN KEY(`salidaLineaId`) REFERENCES `salida_lineas`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`loteId`) REFERENCES `lotes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaLineaId",
+            "columnName": "salidaLineaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loteId",
+            "columnName": "loteId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_salida_lotes_salidaLineaId",
+            "unique": false,
+            "columnNames": [
+              "salidaLineaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salida_lotes_salidaLineaId` ON `${TABLE_NAME}` (`salidaLineaId`)"
+          },
+          {
+            "name": "index_salida_lotes_loteId",
+            "unique": false,
+            "columnNames": [
+              "loteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_salida_lotes_loteId` ON `${TABLE_NAME}` (`loteId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "salida_lineas",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "salidaLineaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "lotes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "loteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "devoluciones",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `salidaId` INTEGER NOT NULL, `salidaLineaId` INTEGER NOT NULL, `loteId` INTEGER, `cantidad` INTEGER NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, `nota` TEXT NOT NULL, FOREIGN KEY(`salidaId`) REFERENCES `salidas`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`salidaLineaId`) REFERENCES `salida_lineas`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`loteId`) REFERENCES `lotes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaId",
+            "columnName": "salidaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaLineaId",
+            "columnName": "salidaLineaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loteId",
+            "columnName": "loteId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_devoluciones_salidaLineaId",
+            "unique": false,
+            "columnNames": [
+              "salidaLineaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_devoluciones_salidaLineaId` ON `${TABLE_NAME}` (`salidaLineaId`)"
+          },
+          {
+            "name": "index_devoluciones_loteId",
+            "unique": false,
+            "columnNames": [
+              "loteId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_devoluciones_loteId` ON `${TABLE_NAME}` (`loteId`)"
+          },
+          {
+            "name": "index_devoluciones_salidaId",
+            "unique": false,
+            "columnNames": [
+              "salidaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_devoluciones_salidaId` ON `${TABLE_NAME}` (`salidaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "salidas",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "salidaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "salida_lineas",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "salidaLineaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "lotes",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "loteId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "trailers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `diaSemana` INTEGER NOT NULL, `nota` TEXT NOT NULL, `activo` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diaSemana",
+            "columnName": "diaSemana",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activo",
+            "columnName": "activo",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_trailers_diaSemana_activo",
+            "unique": false,
+            "columnNames": [
+              "diaSemana",
+              "activo"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_trailers_diaSemana_activo` ON `${TABLE_NAME}` (`diaSemana`, `activo`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "jornadas_rutas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`fecha` TEXT NOT NULL, `cantidadRutas` INTEGER NOT NULL, PRIMARY KEY(`fecha`))",
+        "fields": [
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadRutas",
+            "columnName": "cantidadRutas",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "fecha"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "rutas_diarias",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fecha` TEXT NOT NULL, `numeroRuta` INTEGER NOT NULL, `completada` INTEGER NOT NULL, FOREIGN KEY(`fecha`) REFERENCES `jornadas_rutas`(`fecha`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fecha",
+            "columnName": "fecha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "numeroRuta",
+            "columnName": "numeroRuta",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completada",
+            "columnName": "completada",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_rutas_diarias_fecha",
+            "unique": false,
+            "columnNames": [
+              "fecha"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_rutas_diarias_fecha` ON `${TABLE_NAME}` (`fecha`)"
+          },
+          {
+            "name": "index_rutas_diarias_fecha_numeroRuta",
+            "unique": true,
+            "columnNames": [
+              "fecha",
+              "numeroRuta"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_rutas_diarias_fecha_numeroRuta` ON `${TABLE_NAME}` (`fecha`, `numeroRuta`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "jornadas_rutas",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fecha"
+            ],
+            "referencedColumns": [
+              "fecha"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "configuracion_semanal",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `inicioSemana` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inicioSemana",
+            "columnName": "inicioSemana",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "ajustes_inventario",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `productoId` INTEGER, `productoNombre` TEXT NOT NULL, `cantidadDelta` INTEGER NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, `nota` TEXT NOT NULL, FOREIGN KEY(`productoId`) REFERENCES `productos`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoId",
+            "columnName": "productoId",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "productoNombre",
+            "columnName": "productoNombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadDelta",
+            "columnName": "cantidadDelta",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ajustes_inventario_productoId",
+            "unique": false,
+            "columnNames": [
+              "productoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ajustes_inventario_productoId` ON `${TABLE_NAME}` (`productoId`)"
+          },
+          {
+            "name": "index_ajustes_inventario_fechaEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "fechaEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ajustes_inventario_fechaEpochMillis` ON `${TABLE_NAME}` (`fechaEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "productos",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "productoId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "auditoria_cargas",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `salidaId` INTEGER NOT NULL, `salidaLineaId` INTEGER NOT NULL, `tipo` TEXT NOT NULL, `productoAnteriorId` INTEGER NOT NULL, `productoAnteriorNombre` TEXT NOT NULL, `productoNuevoId` INTEGER NOT NULL, `productoNuevoNombre` TEXT NOT NULL, `cantidadAnterior` INTEGER NOT NULL, `cantidadNueva` INTEGER NOT NULL, `fechaEpochMillis` INTEGER NOT NULL, `nota` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaId",
+            "columnName": "salidaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "salidaLineaId",
+            "columnName": "salidaLineaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo",
+            "columnName": "tipo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoAnteriorId",
+            "columnName": "productoAnteriorId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoAnteriorNombre",
+            "columnName": "productoAnteriorNombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoNuevoId",
+            "columnName": "productoNuevoId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productoNuevoNombre",
+            "columnName": "productoNuevoNombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadAnterior",
+            "columnName": "cantidadAnterior",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidadNueva",
+            "columnName": "cantidadNueva",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fechaEpochMillis",
+            "columnName": "fechaEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nota",
+            "columnName": "nota",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_auditoria_cargas_salidaLineaId",
+            "unique": false,
+            "columnNames": [
+              "salidaLineaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_salidaLineaId` ON `${TABLE_NAME}` (`salidaLineaId`)"
+          },
+          {
+            "name": "index_auditoria_cargas_salidaId",
+            "unique": false,
+            "columnNames": [
+              "salidaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_salidaId` ON `${TABLE_NAME}` (`salidaId`)"
+          },
+          {
+            "name": "index_auditoria_cargas_fechaEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "fechaEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_auditoria_cargas_fechaEpochMillis` ON `${TABLE_NAME}` (`fechaEpochMillis`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '73ba0a3ab7bf96beb393d143727c9854')"
+    ]
+  }
+}

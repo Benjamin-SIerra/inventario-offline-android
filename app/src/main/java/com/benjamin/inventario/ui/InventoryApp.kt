@@ -140,7 +140,11 @@ fun InventoryApp(db: InventoryDatabase) {
                         onBack={showWeeklyHistory=false},onOffset=vm::chooseHistoryWeek
                     )
                     selectedDriverProfile != null -> DriverProfileScreen(
-                        driver=selectedDriverProfile!!,issues=driverHistory,onBack={selectedDriverProfile=null;vm.closeDriverProfile()}
+                        driver=selectedDriverProfile!!,
+                        issues=driverHistory,
+                        onBack={selectedDriverProfile=null;vm.closeDriverProfile()},
+                        onEdit={editingIssue=it},
+                        onChangeProduct={editingIssue=it}
                     )
                     showDriverManager -> DriversScreen(
                         drivers=allDrivers,onBack={showDriverManager=false},
@@ -495,7 +499,7 @@ private fun EditMovementDialog(
 
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(if (receipt != null) "Editar entrada" else "Editar entrega") },
+        title = { Text(if (receipt != null) "Editar entrada" else "Editar carga o realizar cambio") },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (canChangeReceiptProduct) expanded = it }) {
@@ -511,6 +515,7 @@ private fun EditMovementDialog(
                     }
                 }
                 Field("Cantidad", quantity, { quantity = it }, numeric = true)
+                if (issue != null) Text("Para realizar un cambio, selecciona el producto que regresa y su reemplazo arriba; al guardar se restituye el primero y se descuenta el nuevo por PEPS.", fontSize = 12.sp, color = Color.LightGray)
                 if (receipt != null) {
                     Text("Unidades netas aún fuera del almacén: $netOutside. La cantidad nueva no puede ser menor.", fontSize = 12.sp, color = Color.LightGray)
                     if (receipt.referenciasSalida > 0) Text("El producto queda fijo para conservar la trazabilidad; puedes corregir la cantidad o eliminar el lote.", fontSize = 12.sp, color = Amber)
@@ -605,7 +610,7 @@ private fun WeeklyHistoryScreen(startEpoch:Long,endEpoch:Long,offset:Int,receipt
 }
 
 @Composable
-private fun DriverProfileScreen(driver:RepartidorEntity,issues:List<SalidaReciente>,onBack:()->Unit){
+private fun DriverProfileScreen(driver:RepartidorEntity,issues:List<SalidaReciente>,onBack:()->Unit,onEdit:(SalidaReciente)->Unit,onChangeProduct:(SalidaReciente)->Unit){
     var query by remember(driver.id){mutableStateOf("")}
     val filtered=issues.filter{matchesProductSearch(it.productoNombre,it.productoCodigo,query)}
     val zone=java.time.ZoneId.systemDefault()
@@ -616,7 +621,18 @@ private fun DriverProfileScreen(driver:RepartidorEntity,issues:List<SalidaRecien
         OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),label={Text("Buscar producto en sus entregas")},singleLine=true)
         LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){
             if(filtered.isEmpty()) item{EmptyState("Sin entregas",if(query.isBlank())"Este perfil aún no tiene movimientos." else "No hay coincidencias.")}
-            items(filtered,key={it.lineaId}){i->HistoryCard("${i.productoNombre} · ${i.cantidad} u","Carga #${i.salidaId} · total ${i.cantidadTotal} u · ${formatTimestamp(i.fechaEpochMillis)}\n${i.repartidorNombre ?: driver.nombre} · entregado ${i.cantidad} · devuelto ${i.devuelto} · en su poder ${i.pendiente}")}
+            items(filtered,key={it.lineaId}){i->
+                Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color(0xFF202124)),shape=RoundedCornerShape(14.dp)){
+                    Column(Modifier.padding(12.dp)){
+                        Text("${i.productoNombre} · ${i.cantidad} u",fontWeight=FontWeight.SemiBold)
+                        Text("Carga #${i.salidaId} · total ${i.cantidadTotal} u · ${formatTimestamp(i.fechaEpochMillis)}\n${i.repartidorNombre ?: driver.nombre} · devuelto ${i.devuelto} · en su poder ${i.pendiente}",color=Color.LightGray,fontSize=12.sp)
+                        if(i.devuelto==0L) Row {
+                            TextButton(onClick={onEdit(i)}){Text("Editar cantidad",color=Gold)}
+                            TextButton(onClick={onChangeProduct(i)}){Text("Realizar cambio",color=Green)}
+                        } else Text("No se puede modificar porque ya tiene devoluciones registradas.",fontSize=11.sp,color=Color.LightGray)
+                    }
+                }
+            }
         }
     }
 }
@@ -665,8 +681,10 @@ private fun EntryDialog(
     var max by remember(kind,editingProduct?.id){mutableStateOf((editingProduct?.maximo?:20L).toString())}
     var quantity by remember(kind,editingProduct?.id){mutableStateOf((editingProduct?.cantidadActual?:0L).toString())}
     var selectedProduct by remember(products,editingProduct?.id){mutableLongStateOf(editingProduct?.id?:products.firstOrNull()?.id?:0L)}
-    val issueLines=remember(kind,products){mutableStateListOf(BatchLine(products.firstOrNull()?.id?:0L,""))}
+    val selectedQuantities=remember(kind,products){mutableStateMapOf<Long,String>()}
+    var productQuery by remember(kind) { mutableStateOf("") }
     var driverIndex by remember { mutableIntStateOf(-1) }
+    var driverQuery by remember(kind) { mutableStateOf("") }
     var openProduct by remember { mutableStateOf(false) }
     var openDriver by remember { mutableStateOf(false) }
     var openLineIndex by remember { mutableIntStateOf(-1) }
@@ -691,22 +709,38 @@ private fun EntryDialog(
                 }
                 "salida"->{
                     if(products.isEmpty()) Text("Primero registra un producto.",color=Red) else {
-                        issueLines.forEachIndexed{index,line->
-                            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFF202124))){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-                                Row(verticalAlignment=Alignment.CenterVertically){Text("Producto ${index+1}",modifier=Modifier.weight(1f),fontWeight=FontWeight.SemiBold);if(issueLines.size>1)TextButton(onClick={issueLines.removeAt(index)}){Text("Quitar",color=Red)}}
-                                ExposedDropdownMenuBox(expanded=openLineIndex==index,onExpandedChange={openLineIndex=if(openLineIndex==index)-1 else index}){
-                                    OutlinedTextField(value=products.firstOrNull{it.id==line.productId}?.let{"${it.nombre} · stock ${it.cantidadActual}"}?:"Producto",onValueChange={},readOnly=true,label={Text("Producto")},modifier=Modifier.menuAnchor().fillMaxWidth())
-                                    ExposedDropdownMenu(expanded=openLineIndex==index,onDismissRequest={openLineIndex=-1}){products.forEach{product->DropdownMenuItem(text={Text("${product.nombre} · stock ${product.cantidadActual}")},onClick={issueLines[index]=line.copy(productId=product.id);openLineIndex=-1})}}
+                        OutlinedTextField(productQuery,{productQuery=it},Modifier.fillMaxWidth(),label={Text("Buscar producto")},placeholder={Text("Nombre o código")},singleLine=true)
+                        val shownProducts=products.filter{matchesProductSearch(it.nombre,it.codigo,productQuery)}
+                        Text("Selecciona cantidades; el inventario disponible se valida al confirmar.",fontSize=12.sp,color=Color.LightGray)
+                        Column(Modifier.heightIn(max=285.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                            shownProducts.forEach { product ->
+                                val input=selectedQuantities[product.id].orEmpty()
+                                val selected=parseWholeNumber(input)?.let { it>0L } == true
+                                Card(colors=CardDefaults.cardColors(containerColor=if(selected) Color(0xFF39331E) else Color(0xFF202124)),shape=RoundedCornerShape(12.dp)) {
+                                    Row(Modifier.fillMaxWidth().padding(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(product.nombre,fontWeight=if(selected) FontWeight.Bold else FontWeight.Normal)
+                                            Text("Stock disponible: ${product.cantidadActual} ${product.unidad}",fontSize=12.sp,color=if(product.cantidadActual>0) Green else Red)
+                                        }
+                                        TextButton(enabled=(parseWholeNumber(input)?:0L)>0L,onClick={
+                                            val next=((parseWholeNumber(input)?:0L)-1L).coerceAtLeast(0L)
+                                            selectedQuantities[product.id]=if(next==0L) "" else next.toString()
+                                        }) { Text("−",fontSize=20.sp) }
+                                        OutlinedTextField(input,{value->if(isWholeNumberInput(value))selectedQuantities[product.id]=value},Modifier.width(64.dp),singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number))
+                                        TextButton(enabled=(parseWholeNumber(input)?:0L)<product.cantidadActual,onClick={
+                                            selectedQuantities[product.id]=((parseWholeNumber(input)?:0L)+1L).toString()
+                                        }) { Text("+",fontSize=20.sp) }
+                                    }
                                 }
-                                Field("Cantidad",line.quantity,{issueLines[index]=line.copy(quantity=it)},numeric=true)
-                            }}
+                            }
+                            if(shownProducts.isEmpty()) Text("No hay productos que coincidan.",color=Color.LightGray)
                         }
-                        TextButton(onClick={issueLines.add(BatchLine(products.first().id,""))}){Text("+ Agregar otro producto",color=Gold)}
                         ExposedDropdownMenuBox(expanded=openDriver,onExpandedChange={openDriver=it}){
                             OutlinedTextField(value=drivers.getOrNull(driverIndex)?.nombre?:"Sin repartidor",onValueChange={},readOnly=true,label={Text("Repartidor asignado")},modifier=Modifier.menuAnchor().fillMaxWidth())
                             ExposedDropdownMenu(expanded=openDriver,onDismissRequest={openDriver=false}) {
+                                OutlinedTextField(driverQuery,{driverQuery=it},Modifier.fillMaxWidth().padding(8.dp),label={Text("Buscar repartidor")},singleLine=true)
                                 DropdownMenuItem(text={Text("Sin repartidor")},onClick={driverIndex=-1;openDriver=false})
-                                drivers.forEachIndexed { index, driver -> DropdownMenuItem(text={Text(driver.nombre)},onClick={driverIndex=index;openDriver=false}) }
+                                drivers.forEachIndexed { index, driver -> if(driver.nombre.contains(driverQuery,true)) DropdownMenuItem(text={Text(driver.nombre)},onClick={driverIndex=index;openDriver=false}) }
                             }
                         }
                         Text("Se guarda una sola salida auditada con fecha/hora, repartidor y total de unidades; cada producto conserva su detalle PEPS.",fontSize=12.sp,color=Color.LightGray)
@@ -720,7 +754,7 @@ private fun EntryDialog(
         when(kind){
             "producto"->TextButton(enabled=name.isNotBlank()&&minimum!=null&&maximum!=null&&maximum>=minimum&&amount!=null&&amount>=0L,onClick={onSaveProduct(editingProduct?.id,name,code,unit,minimum!!,maximum!!,amount!!)} ){Text("Guardar")}
             "entrada"->TextButton(enabled=products.any{it.id==selectedProduct}&&amount!=null&&amount>0L,onClick={onReceive(selectedProduct,amount!!)} ){Text("Confirmar recepción")}
-            "salida"->{val quantities=issueLines.map{parseWholeNumber(it.quantity)};val dispatch=issueLines.mapIndexedNotNull{idx,line->quantities[idx]?.let{line.productId to it}};val available=products.associate{it.id to it.cantidadActual};val valid=dispatch.size==issueLines.size&&isValidMultiProductIssue(dispatch,available);TextButton(enabled=valid,onClick={onIssue(dispatch,drivers.getOrNull(driverIndex))}){Text("Confirmar carga")}}
+            "salida"->{val dispatch=selectedQuantities.mapNotNull{(id,input)->parseWholeNumber(input)?.takeIf{it>0L}?.let{id to it}};val available=products.associate{it.id to it.cantidadActual};val valid=isValidMultiProductIssue(dispatch,available);TextButton(enabled=valid,onClick={onIssue(dispatch,drivers.getOrNull(driverIndex))}){Text("Confirmar carga")}}
             "repartidor"->TextButton(enabled=name.isNotBlank(),onClick={if(editingDriver==null)onSaveDriver(name)else onUpdateDriver(editingDriver.id,name)}){Text("Guardar")}
             else->TextButton(onClick=onClose){Text("Listo")}
         }
