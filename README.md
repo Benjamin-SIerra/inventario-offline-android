@@ -24,12 +24,12 @@ Aplicación Android nativa en Kotlin + Jetpack Compose/Material 3. El inventario
 `Compose → InventoryViewModel (StateFlow) → InventoryRepository → InventoryDao → Room`. Recepciones, salidas, devoluciones, ajustes y cargas multi-producto se ejecutan en transacciones. La versión 4 migra el código de producto, conserva los registros existentes, añade configuración del inicio semanal, auditoría de totales por salida y ajustes directos.
 
 ## Compilar
-Requiere JDK 17 y Android SDK 35. Desde la carpeta del proyecto:
+Requiere JDK 17, Android SDK 35 y el Gradle Wrapper incluido (Gradle 8.10.2). Desde la carpeta del proyecto:
 
 ```bash
-gradle assembleDebug
+./gradlew assembleDebug
 # APK: app/build/outputs/apk/debug/app-debug.apk
-gradle testDebugUnitTest
+./gradlew testDebugUnitTest
 ```
 
 Incluye pruebas unitarias para FIFO, devoluciones, cantidades, búsquedas, clasificación de stock y ciclos semanales; pruebas instrumentadas Room para migraciones, lotes, repartidores, stock inicial, ajustes y salidas multi-producto. Verifica el SQL Room 3→4 sin dispositivo con `python scripts/verify_inventory_migration.py`; compila instrumentación con `:app:compileDebugAndroidTestKotlin`.
